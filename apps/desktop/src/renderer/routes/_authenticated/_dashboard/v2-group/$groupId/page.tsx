@@ -3,6 +3,7 @@ import { Button } from "@superset/ui/button";
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useState } from "react";
 import { BsTerminalPlus } from "react-icons/bs";
+import { useHotkey } from "renderer/hotkeys";
 import { ResizablePanel } from "renderer/screens/main/components/ResizablePanel";
 import { useStore } from "zustand";
 import type {
@@ -12,6 +13,7 @@ import type {
 import { GroupAddTabMenu } from "./components/GroupAddTabMenu";
 import { GroupEmptyState } from "./components/GroupEmptyState";
 import { GroupManageButton } from "./components/GroupManageButton";
+import { GroupQuickOpen } from "./components/GroupQuickOpen";
 import { GroupSidebar } from "./components/GroupSidebar";
 import { useGroupFileNavigation } from "./hooks/useGroupFileNavigation";
 import { useGroupPaneLayout } from "./hooks/useGroupPaneLayout";
@@ -35,6 +37,30 @@ function V2GroupPage() {
 	});
 	const [sidebarWidth, setSidebarWidth] = useState(300);
 	const [isSidebarResizing, setIsSidebarResizing] = useState(false);
+	const [quickOpenOpen, setQuickOpenOpen] = useState(false);
+
+	// Cross-root quick-open (Q4). The handler is scoped to this group page: the
+	// `useHotkey("QUICK_OPEN", …)` binding only lives while this component is
+	// mounted, and the single-workspace `QUICK_OPEN` binding lives in the
+	// v2-workspace page (never mounted on a group route), so this does not hijack
+	// or break the global palette outside group routes. An empty group has no
+	// roots to search, so quick-open is suppressed there.
+	const openQuickOpen = useCallback(() => {
+		if (roots.length > 0) setQuickOpenOpen(true);
+	}, [roots.length]);
+	useHotkey("QUICK_OPEN", openQuickOpen);
+	const handleQuickOpenSelect = useCallback(
+		(result: { absolutePath: string; rootId: string }) => {
+			// The result's path is already absolute; `openFilePane` stores absolute
+			// paths verbatim (toAbsoluteWorkspacePath is a no-op on absolute input)
+			// and stamps the result's `rootId` so FS reads route to THAT root.
+			openFilePane({
+				filePath: result.absolutePath,
+				rootId: result.rootId,
+			});
+		},
+		[openFilePane],
+	);
 
 	// Terminal actions surface in the pane-area "+" menu (and the empty-pane
 	// state). Awaited create/launch is fire-and-forget from the click handler;
@@ -88,6 +114,7 @@ function V2GroupPage() {
 						onSelectFile={({ rootId, filePath, openInNewTab }) =>
 							openFilePane({ filePath, rootId, openInNewTab })
 						}
+						onQuickOpen={openQuickOpen}
 					/>
 				</ResizablePanel>
 			)}
@@ -143,6 +170,13 @@ function V2GroupPage() {
 					/>
 				)}
 			</div>
+			{!isEmptyGroup && (
+				<GroupQuickOpen
+					open={quickOpenOpen}
+					onOpenChange={setQuickOpenOpen}
+					onSelectResult={handleQuickOpenSelect}
+				/>
+			)}
 		</div>
 	);
 }

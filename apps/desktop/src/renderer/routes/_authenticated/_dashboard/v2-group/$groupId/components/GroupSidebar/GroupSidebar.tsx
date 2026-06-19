@@ -1,5 +1,6 @@
+import { Button } from "@superset/ui/button";
 import { useEffect, useRef, useState } from "react";
-import { LuFile, LuGitCompareArrows } from "react-icons/lu";
+import { LuFile, LuGitCompareArrows, LuSearch } from "react-icons/lu";
 import { SidebarHeader } from "../../../../v2-workspace/$workspaceId/components/WorkspaceSidebar/components/SidebarHeader";
 import type { SidebarTabDefinition } from "../../../../v2-workspace/$workspaceId/components/WorkspaceSidebar/types";
 import { GroupChangesTab } from "../GroupChangesTab";
@@ -25,6 +26,8 @@ interface GroupSidebarProps {
 	onSelectFile: (input: GroupSelectFileInput) => void;
 	/** Absolute path of the currently active file pane, for selection highlight. */
 	selectedFilePath?: string;
+	/** Open the cross-root quick-open overlay (also bound to the QUICK_OPEN hotkey). */
+	onQuickOpen: () => void;
 }
 
 /**
@@ -42,6 +45,7 @@ interface GroupSidebarProps {
 export function GroupSidebar({
 	onSelectFile,
 	selectedFilePath,
+	onQuickOpen,
 }: GroupSidebarProps) {
 	const [activeTab, setActiveTab] = useState<GroupSidebarTabId>("files");
 
@@ -61,16 +65,32 @@ export function GroupSidebar({
 		return () => ro.disconnect();
 	}, []);
 
-	// The manage action (add/remove/reorder/set-default/rename) lives in the
-	// header so it's reachable while a group is open; it refreshes this shell's
+	// The header actions: a cross-root quick-open trigger (the clickable
+	// counterpart to the QUICK_OPEN hotkey) plus the manage action
+	// (add/remove/reorder/set-default/rename), which refreshes this shell's
 	// `workspaceGroup.get` directly (see GroupManageButton).
-	const manageAction = <GroupManageButton variant="icon" />;
+	const headerActions = (
+		<div className="flex items-center gap-1">
+			<Button
+				type="button"
+				variant="ghost"
+				size="icon"
+				className="size-7"
+				onClick={onQuickOpen}
+				title="Search files across all roots"
+				aria-label="Search files across all roots"
+			>
+				<LuSearch className="size-4" />
+			</Button>
+			<GroupManageButton variant="icon" />
+		</div>
+	);
 
 	const filesTab: SidebarTabDefinition = {
 		id: "files",
 		label: "Files",
 		icon: LuFile,
-		actions: manageAction,
+		actions: headerActions,
 		content: (
 			<GroupFilesTab
 				selectedFilePath={selectedFilePath}
@@ -83,7 +103,7 @@ export function GroupSidebar({
 		id: "changes",
 		label: "Changes",
 		icon: LuGitCompareArrows,
-		actions: manageAction,
+		actions: headerActions,
 		content: (
 			<GroupChangesTab
 				selectedFilePath={selectedFilePath}
