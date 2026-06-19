@@ -62,7 +62,7 @@ These assumptions unblock planning. Each must be confirmed (moved to the Decisio
 
 ## Progress
 
-- [ ] M1 — host-service `workspaceGroup` router + in-memory store + `rootId` FS resolution (no SQLite).
+- [x] (2026-06-19) M1 — host-service `workspaceGroup` router + in-memory store + `rootId` FS resolution (no SQLite). 9 procedures on `appRouter.workspaceGroup`; `WorkspaceGroupResolver` resolves roots (+`exists`); `getServiceForRootId` added. Committed `61cb589b6` — host tests 703 pass / 0 fail (+8 new), typecheck 28/28, lint clean.
 - [ ] M2 — `rootId` discriminator on pane data; route filesystem/git calls by root.
 - [ ] M3 — `v2-group/$groupId` route, `WorkspaceGroupProvider`, group-scoped pane store + renderer-local layout persistence.
 - [ ] M4 — multi-root Files explorer (N trees) + multi-root Changes/git sections.
@@ -83,6 +83,16 @@ Use timestamps (e.g. `- [x] (2026-06-19 06:30Z) ...`) when checking items off, t
 
 - Observation: The client transport `packages/workspace-client` is scoped per **host**, not per workspace, and its event bus already multiplexes many workspaces over one socket.
   Evidence: `packages/workspace-client/src/providers/WorkspaceClientProvider/WorkspaceClientProvider.tsx` takes `{ cacheKey, hostUrl }` and no `workspaceId`; `packages/workspace-client/src/lib/eventBus.ts` keys connections by `hostUrl` and filters each event by a per-message `workspaceId`, supporting a `"*"` wildcard.
+
+- (M1, 2026-06-19) The host tRPC context is assembled **inline** in `packages/host-service/src/app.ts` inside the `trpcServer({ createContext })` call (cast `as Record<string, unknown>`), not in a separate context-builder module. The single `createInMemoryWorkspaceGroupStore()` + `WorkspaceGroupResolver({ db })` are constructed there and exposed on ctx; `HostServiceContext` in `src/types.ts` gained `workspaceGroupStore` + `workspaceGroupResolver`.
+
+- (M1) `getServiceForRootPath` did **not** need to be widened — it stays `private`. `getServiceForRootId({ groupId, rootId })` is a new public method on `WorkspaceFilesystemManager` that calls the private cache method internally, so no cache duplication.
+
+- (M1) `bun:sqlite` vs `better-sqlite3` type mismatch: `HostDb` is typed against the better-sqlite3 driver (`run: RunResult`), but host-service tests use `bun:sqlite` (`run: void`). Passing a bun-sqlite db to `new WorkspaceGroupResolver({ db })` needed `as unknown as HostDb`, matching the existing cast pattern in `config.test.ts`.
+
+- (M1) `noNonNullAssertion` is **on** for host-service (only `packages/cli`/`cli-framework` override it off). New code uses explicit guards, not `!`.
+
+- (M1, env) `bun run lint` prints `rg: command not found` from an unrelated `check-git-ref-strings.sh` step; the script still exits 0 and Biome reports clean. Pre-existing on this machine (ripgrep not installed); not introduced by this work.
 
 
 ## Decision Log
@@ -108,6 +118,8 @@ Use timestamps (e.g. `- [x] (2026-06-19 06:30Z) ...`) when checking items off, t
 - D-Q3 (pending): Synthetic agent root mechanism. Default: symbolic links.
 - D-Q4 (pending): Cross-root search. Default: fan out to all roots and merge with root labels.
 - D-Q5 (pending): Empty group allowed. Default: yes, with an empty-state prompt.
+
+- Decision (M1, 2026-06-19): The `workspaceGroup` contract is finalized as of M1. Deviation from the plan draft (additive, no narrowing): `create`/`list`/all mutations return the **resolved** group (roots already carry `rootPath`/`exists`), not just `get`. This spares the renderer a follow-up `get` after each mutation. Also added a named `WorkspaceGroupRootInput = Omit<WorkspaceGroupRoot, "rootId" | "position">` alias (the plan inlined it) and implemented the resolver as a small `WorkspaceGroupResolver` class (it depends on `db`, mirroring `WorkspaceFilesystemManager`). Q1–Q5 remain at their defaults; nothing in M1 required deviating.
 
 
 ## Context and Orientation
