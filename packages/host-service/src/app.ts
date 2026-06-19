@@ -17,6 +17,10 @@ import type { GitCredentialProvider } from "./runtime/git";
 import { createGitFactory } from "./runtime/git";
 import { runMainWorkspaceSweep } from "./runtime/main-workspace-sweep";
 import { PullRequestRuntimeManager } from "./runtime/pull-requests";
+import {
+	createInMemoryWorkspaceGroupStore,
+	WorkspaceGroupResolver,
+} from "./runtime/workspace-groups";
 import { registerWorkspaceTerminalRoute } from "./terminal/terminal";
 import { TerminalAgentStore } from "./terminal-agents";
 import { appRouter } from "./trpc/router";
@@ -85,7 +89,18 @@ export function createApp(options: CreateAppOptions): CreateAppResult {
 		});
 	const execGh: ExecGh = options.execGh ?? defaultExecGh;
 
-	const filesystem = new WorkspaceFilesystemManager({ db });
+	// Multi-root workspace ("group") storage and root resolution. The store is
+	// in-memory until M7 swaps in a SQLite-backed implementation behind the same
+	// interface; the resolver maps each root to an absolute on-disk path. A single
+	// instance of each is shared via the tRPC context.
+	const workspaceGroupStore = createInMemoryWorkspaceGroupStore();
+	const workspaceGroupResolver = new WorkspaceGroupResolver({ db });
+
+	const filesystem = new WorkspaceFilesystemManager({
+		db,
+		workspaceGroupStore,
+		workspaceGroupResolver,
+	});
 	// GitWatcher is the single source of truth for `.git/` and worktree fs
 	// activity per workspace. Both EventBus (broadcasts to clients) and the
 	// pull-requests runtime (event-driven branch sync) subscribe to it.
@@ -184,6 +199,8 @@ export function createApp(options: CreateAppOptions): CreateAppResult {
 					runtime,
 					eventBus,
 					terminalAgentStore,
+					workspaceGroupStore,
+					workspaceGroupResolver,
 					organizationId: config.organizationId,
 					isAuthenticated,
 					clientMachineId:

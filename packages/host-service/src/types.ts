@@ -8,6 +8,10 @@ import type { ChatRuntimeManager } from "./runtime/chat";
 import type { WorkspaceFilesystemManager } from "./runtime/filesystem";
 import type { GitCredentialProvider, GitFactory } from "./runtime/git";
 import type { PullRequestRuntimeManager } from "./runtime/pull-requests";
+import type {
+	WorkspaceGroupResolver,
+	WorkspaceGroupStore,
+} from "./runtime/workspace-groups";
 import type { TerminalAgentStore } from "./terminal-agents";
 import type { ExecGh } from "./trpc/router/workspace-creation/utils/exec-gh";
 
@@ -30,6 +34,10 @@ export interface HostServiceContext {
 	runtime: HostServiceRuntime;
 	eventBus: EventBus;
 	terminalAgentStore: TerminalAgentStore;
+	/** In-memory (M1) store of multi-root workspace definitions. */
+	workspaceGroupStore: WorkspaceGroupStore;
+	/** Resolves group roots to absolute on-disk paths using host-local data. */
+	workspaceGroupResolver: WorkspaceGroupResolver;
 	organizationId: string;
 	isAuthenticated: boolean;
 	clientMachineId?: string;

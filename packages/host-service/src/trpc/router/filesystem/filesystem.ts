@@ -41,6 +41,74 @@ function getFilesystemService(ctx: HostServiceContext, workspaceId: string) {
 	}
 }
 
+/**
+ * Resolve the FS service for a multi-root workspace ("group") root addressing.
+ * Translates the runtime's not-found / unresolvable errors into tRPC codes.
+ */
+function getRootIdFilesystemService(
+	ctx: HostServiceContext,
+	input: { groupId: string; rootId: string },
+) {
+	try {
+		return ctx.runtime.filesystem.getServiceForRootId(input);
+	} catch (error) {
+		if (
+			error instanceof Error &&
+			error.message.startsWith("Workspace group not found:")
+		) {
+			throw new TRPCError({ code: "NOT_FOUND", message: error.message });
+		}
+		if (
+			error instanceof Error &&
+			(error.message.includes("not found in group") ||
+				error.message.includes("does not resolve to an existing path"))
+		) {
+			throw new TRPCError({ code: "NOT_FOUND", message: error.message });
+		}
+		throw error;
+	}
+}
+
+/**
+ * Read-only filesystem procedures accept EITHER the existing workspace
+ * addressing (`{ workspaceId }`) OR a multi-root group addressing
+ * (`{ groupId, rootId }`). This zod schema captures the discriminating fields;
+ * `pickReadService` selects the matching FS service. Both forms then share the
+ * same remaining input (the per-call path/options).
+ */
+const readAddressingSchema = z.union([
+	z.object({ workspaceId: z.string() }),
+	z.object({ groupId: z.string(), rootId: z.string() }),
+]);
+
+type ReadAddressing = z.infer<typeof readAddressingSchema>;
+
+function pickReadService(ctx: HostServiceContext, addressing: ReadAddressing) {
+	if ("workspaceId" in addressing) {
+		return getFilesystemService(ctx, addressing.workspaceId);
+	}
+	return getRootIdFilesystemService(ctx, addressing);
+}
+
+/**
+ * Split a read-procedure input into the FS service (selected by addressing) and
+ * the remaining per-call fields the service expects. Strips both possible
+ * addressing shapes so neither `workspaceId` nor `{ groupId, rootId }` leaks
+ * into the service call.
+ */
+function resolveReadServiceInput<T extends ReadAddressing>(
+	ctx: HostServiceContext,
+	input: T,
+) {
+	const service = pickReadService(ctx, input);
+	const { workspaceId, groupId, rootId, ...serviceInput } = input as T & {
+		workspaceId?: string;
+		groupId?: string;
+		rootId?: string;
+	};
+	return { service, serviceInput };
+}
+
 function getProjectFilesystemService(
 	ctx: HostServiceContext,
 	projectId: string,
@@ -153,31 +221,33 @@ export const filesystemRouter = router({
 
 	listDirectory: queryProcedure
 		.input(
-			z.object({
-				workspaceId: z.string(),
-				absolutePath: z.string(),
-			}),
+			z.intersection(
+				readAddressingSchema,
+				z.object({
+					absolutePath: z.string(),
+				}),
+			),
 		)
 		.query(async ({ ctx, input, signal }) => {
-			const { workspaceId, ...serviceInput } = input;
-			const service = getFilesystemService(ctx, workspaceId);
+			const { service, serviceInput } = resolveReadServiceInput(ctx, input);
 			return await service.listDirectory(serviceInput, { signal });
 		}),
 
 	readFile: queryProcedure
 		.meta({ timeoutMs: 30_000 })
 		.input(
-			z.object({
-				workspaceId: z.string(),
-				absolutePath: z.string(),
-				offset: z.number().optional(),
-				maxBytes: z.number().optional(),
-				encoding: z.string().optional(),
-			}),
+			z.intersection(
+				readAddressingSchema,
+				z.object({
+					absolutePath: z.string(),
+					offset: z.number().optional(),
+					maxBytes: z.number().optional(),
+					encoding: z.string().optional(),
+				}),
+			),
 		)
 		.query(async ({ ctx, input }) => {
-			const { workspaceId, ...serviceInput } = input;
-			const service = getFilesystemService(ctx, workspaceId);
+			const { service, serviceInput } = resolveReadServiceInput(ctx, input);
 			const result = await service.readFile(serviceInput);
 
 			if (result.kind === "bytes") {
@@ -192,14 +262,15 @@ export const filesystemRouter = router({
 
 	getMetadata: queryProcedure
 		.input(
-			z.object({
-				workspaceId: z.string(),
-				absolutePath: z.string(),
-			}),
+			z.intersection(
+				readAddressingSchema,
+				z.object({
+					absolutePath: z.string(),
+				}),
+			),
 		)
 		.query(async ({ ctx, input }) => {
-			const { workspaceId, ...serviceInput } = input;
-			const service = getFilesystemService(ctx, workspaceId);
+			const { service, serviceInput } = resolveReadServiceInput(ctx, input);
 			return await service.getMetadata(serviceInput);
 		}),
 

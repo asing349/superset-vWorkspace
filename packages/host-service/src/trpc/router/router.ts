@@ -21,6 +21,7 @@ import { terminalAgentsRouter } from "./terminal-agents";
 import { workspaceRouter } from "./workspace";
 import { workspaceCleanupRouter } from "./workspace-cleanup";
 import { workspaceCreationRouter } from "./workspace-creation";
+import { workspaceGroupRouter } from "./workspace-group";
 import { workspacesRouter } from "./workspaces";
 
 export const appRouter = router({
@@ -45,6 +46,7 @@ export const appRouter = router({
 	terminalAgents: terminalAgentsRouter,
 	workspace: workspaceRouter,
 	workspaces: workspacesRouter,
+	workspaceGroup: workspaceGroupRouter,
 	workspaceCleanup: workspaceCleanupRouter,
 	workspaceCreation: workspaceCreationRouter,
 });
