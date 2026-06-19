@@ -94,3 +94,6 @@ superset-dev-data/
 
 # Local-only plans (not tracked)
 plans/local/
+
+# Claude Code personal settings (per-user, not shared)
+.claude/settings.local.json
