@@ -13,11 +13,21 @@ export interface FileTreeNode {
 	children: FileTreeNode[];
 }
 
-export interface UseFileTreeParams {
-	workspaceId: string;
+/**
+ * Filesystem addressing for a file tree, mirroring the host's read-procedure
+ * contract (M1/M2): a tree is either scoped to a single Superset workspace
+ * (`{ workspaceId }`) or to one root of a multi-root workspace ("group"),
+ * addressed by `{ groupId, rootId }`. The two forms are mutually exclusive;
+ * each `listDirectory` call routes via the matching form.
+ */
+export type FileTreeAddressing =
+	| { workspaceId: string; groupId?: undefined; rootId?: undefined }
+	| { groupId: string; rootId: string; workspaceId?: undefined };
+
+export type UseFileTreeParams = FileTreeAddressing & {
 	rootPath: string;
 	persistKey?: string;
-}
+};
 
 export interface UseFileTreeResult {
 	isLoadingRoot: boolean;
@@ -203,10 +213,35 @@ function retargetPath(path: string, fromPath: string, toPath: string): string {
 	return path;
 }
 
-export function useFileTree({
-	workspaceId,
-	rootPath,
-}: UseFileTreeParams): UseFileTreeResult {
+export function useFileTree(params: UseFileTreeParams): UseFileTreeResult {
+	const { rootPath } = params;
+	// Discriminate the addressing once. `workspaceId` drives the existing
+	// single-root behaviour (FS reads + fs-events watching); `{ groupId, rootId }`
+	// routes a multi-root workspace ("group") root's reads to the matching host
+	// procedure. Exactly one form is set per the union, so a populated
+	// `workspaceId` (or `groupId`) is what gates whether the tree can load.
+	const workspaceId = params.workspaceId;
+	const groupId = params.groupId;
+	const rootId = params.rootId;
+	// A tree can load as long as it has *some* addressing form; folder roots have
+	// a `groupId`/`rootId` but no `workspaceId`.
+	const hasAddressing = Boolean(workspaceId) || Boolean(groupId && rootId);
+
+	// Build the `listDirectory` input for a given path using the active
+	// addressing form. Memoized on the discriminating ids so `loadDirectory`'s
+	// identity only changes when the tree's root changes.
+	const buildListInput = useCallback(
+		(absolutePath: string) =>
+			workspaceId
+				? ({ workspaceId, absolutePath } as const)
+				: ({
+						groupId: groupId ?? "",
+						rootId: rootId ?? "",
+						absolutePath,
+					} as const),
+		[workspaceId, groupId, rootId],
+	);
+
 	const utils = workspaceTrpc.useUtils();
 	const [state, setState] = useState<FileTreeState>(() => createInitialState());
 	const stateRef = useRef(state);
@@ -229,7 +264,7 @@ export function useFileTree({
 			options: LoadDirectoryOptions = {},
 		): Promise<void> => {
 			const { force = false } = options;
-			if (!workspaceId || !absolutePath) return;
+			if (!hasAddressing || !absolutePath) return;
 
 			const currentState = stateRef.current;
 			if (currentState.loadingDirectories.has(absolutePath)) return;
@@ -241,7 +276,7 @@ export function useFileTree({
 				return;
 			}
 
-			const input = { workspaceId, absolutePath };
+			const input = buildListInput(absolutePath);
 			const cachedResult = utils.filesystem.listDirectory.getData(input);
 			if (cachedResult) {
 				updateState((current) =>
@@ -276,7 +311,12 @@ export function useFileTree({
 				});
 			}
 		},
-		[updateState, utils.filesystem.listDirectory, workspaceId],
+		[
+			updateState,
+			utils.filesystem.listDirectory,
+			hasAddressing,
+			buildListInput,
+		],
 	);
 
 	const refreshPath = useCallback(
@@ -360,9 +400,22 @@ export function useFileTree({
 		void loadDirectory(rootPath, { force: true });
 	}, [loadDirectory, rootPath, updateState]);
 
+	// Live tree updates from filesystem events.
+	//
+	// `kind: "workspace"` roots have a real `workspaceId` and subscribe to that
+	// workspace's `fs:events` stream (the existing single-root behaviour, and the
+	// only form the event bus understands today — it filters events by
+	// `workspaceId`). `kind: "folder"` group roots have no `workspaceId`, so the
+	// subscription stays disabled for them: the tree still loads and refreshes on
+	// demand (toggle/refresh), it just doesn't auto-update on external disk
+	// changes.
+	//
+	// TODO(M4-followup): add a `{ groupId, rootId }`-addressed fs-events stream on
+	// the host + event bus so folder roots get live updates too. Deferred because
+	// it requires a host-service change (out of M4's renderer scope).
 	useWorkspaceEvent(
 		"fs:events",
-		workspaceId,
+		workspaceId ?? "",
 		(event) => {
 			if (!rootPath) {
 				return;

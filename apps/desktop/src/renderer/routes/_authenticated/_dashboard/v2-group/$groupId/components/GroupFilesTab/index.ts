@@ -1,0 +1,1 @@
+export { GroupFilesTab } from "./GroupFilesTab";
