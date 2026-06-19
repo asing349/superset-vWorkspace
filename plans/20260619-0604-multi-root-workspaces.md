@@ -68,7 +68,7 @@ These assumptions unblock planning. Each must be confirmed (moved to the Decisio
 - [x] (2026-06-19) M4 — multi-root Files explorer (N trees) + multi-root Changes/git sections. `useFileTree` extended to a `{workspaceId,rootPath} | {groupId,rootId,rootPath}` union; `GroupFilesTab` (N independent per-root trees, per-`kind` addressing, `exists:false` shown unavailable); `GroupChangesTab` (per `kind:"workspace"` git root via `useGitStatus`); `GroupSidebar` mounted in the group shell; clicks → `useGroupFileNavigation` with the root's `rootId`. Committed `72aca0dd4` — typecheck 28/28, lint clean, group tests 3 pass. Folder-root fs-event watching deferred (TODO, needs host change).
 - [x] (2026-06-19) M5 — sidebar switcher entry + create/add-folder/remove/reorder/set-default management UI. "Multi-root workspaces" DashboardSidebar section (list/create/navigate); create + manage dialogs wired to all `workspaceGroup.*` mutations; add-folder uses the native `window.selectDirectory` IPC picker; add-existing-workspace lists local-host worktrees. Committed `9a8c630a5` — typecheck 28/28, lint clean, sidebar tests pass.
 - [~] (2026-06-19) M6 — agent spanning. **Host done** (`14dce23c9`): `workspaceGroup.prepareAgentRoot` (idempotent symlink root under `~/.superset/group-roots/<id>/`), terminal targeting `{groupId, rootId|agentRoot}` (incl. folder roots, null `originWorkspaceId`), `SUPERSET_ROOTS` (newline-separated) env; plus group-addressed `searchFiles`/`searchContent` (#9, host part). **Renderer terminals/agent done** (parts A+B): `useGroupTerminalLauncher` (`createForRoot`→`{rootTarget:{groupId,rootId}}`, `createAgentRoot`→`prepareAgentRoot` then `{rootTarget:{groupId,agentRoot:true}}`); group-scoped `GroupTerminalPane` (WS attach by terminalId, no `workspaceId` query param) registered as the `terminal` pane kind in `useGroupPaneRegistry`; pane data stamped with `rootId` (none for the agent root); actions surfaced via `GroupAddTabMenu` (`renderAddTabMenu`) + the empty-pane state; empty group hides them. Committed `394a2c2c4` — typecheck 28/28, node-import grep clean, lint exit 0. Cross-root quick-open done (#10, `f32cab32c`): `useGroupFileSearch` fans out `searchFiles` across existing roots via `useQueries`, score-ranked merge with per-result root labels, opens via the result's `rootId`; scoped Cmd/Ctrl+P + sidebar button (global palette untouched). Cross-root **content** search deferred (TODO — no v2 content-search panel exists to mirror; host contract already group-addressable).
-- [ ] M7 — SQL: host SQLite `workspace_groups` + `workspace_group_roots` tables; swap in-memory store for SQLite-backed store.
+- [x] (2026-06-19) M7 — SQL: host SQLite `workspace_groups` + `workspace_group_roots` tables; swap in-memory store for SQLite-backed store. `createSqliteWorkspaceGroupStore` (position re-stamping, dangling-default clearing, FK-cascade delete, txn-wrapped); single `app.ts` swap (router + UI untouched, in-memory retained for tests); migration `0006_workspace_groups.sql` generated via drizzle-kit (applied on startup). Groups now survive host restart. Committed `5850a8d46` — host tests 722 pass / 0 fail (+9 new), typecheck 28/28, lint clean.
 
 Use timestamps (e.g. `- [x] (2026-06-19 06:30Z) ...`) when checking items off, to measure rate of progress. Split any partially complete item into "done: X / remaining: Y".
 
@@ -163,11 +163,11 @@ Use timestamps (e.g. `- [x] (2026-06-19 06:30Z) ...`) when checking items off, t
   Rationale: User-directed sequencing ("make all the edits first and sql will be the last part of the plan"). The interface seam means the UI and tRPC contract are final from M1, and only the storage backend changes at M7.
   Date/Author: 2026-06-19, planning session (user-selected).
 
-- D-Q1 (pending): Final naming. Default: label "Multi-root workspace", code `group`/`root`, route `v2-group`.
-- D-Q2 (pending): Explorer rendering. Default: N independent `useFileTree` instances with collapsible per-root headers.
-- D-Q3 (pending): Synthetic agent root mechanism. Default: symbolic links.
-- D-Q4 (pending): Cross-root search. Default: fan out to all roots and merge with root labels.
-- D-Q5 (pending): Empty group allowed. Default: yes, with an empty-state prompt.
+- D-Q1 (decided 2026-06-19, default): label "Multi-root workspace", code `group`/`root`, route `v2-group`. Shipped as-is.
+- D-Q2 (decided 2026-06-19, default): N independent `useFileTree` instances with collapsible per-root headers (`GroupFilesTab`).
+- D-Q3 (decided 2026-06-19, default): symbolic links — `workspaceGroup.prepareAgentRoot` reconciles `~/.superset/group-roots/<id>/`. No symlink misbehavior observed in tests (dangling-link `lstat` edge handled; labels sanitized + de-duped); mechanism retained, no Decision Log switch.
+- D-Q4 (decided 2026-06-19, default): fan out `searchFiles` to every existing root and merge with per-root labels (`useGroupFileSearch` quick-open, score-ranked). Cross-root **content** search (`searchContent`) deferred — host contract is already group-addressable, but there is no v2 content-search panel to mirror (zero renderer consumers repo-wide).
+- D-Q5 (decided 2026-06-19, default): empty group allowed, with an "Add a folder or workspace" empty state (also surfaces New Terminal / Launch combined agent / Add root).
 
 - Decision (M1, 2026-06-19): The `workspaceGroup` contract is finalized as of M1. Deviation from the plan draft (additive, no narrowing): `create`/`list`/all mutations return the **resolved** group (roots already carry `rootPath`/`exists`), not just `get`. This spares the renderer a follow-up `get` after each mutation. Also added a named `WorkspaceGroupRootInput = Omit<WorkspaceGroupRoot, "rootId" | "position">` alias (the plan inlined it) and implemented the resolver as a small `WorkspaceGroupResolver` class (it depends on `db`, mirroring `WorkspaceFilesystemManager`). Q1–Q5 remain at their defaults; nothing in M1 required deviating.
 
@@ -565,7 +565,22 @@ The group explorer instead maps over `workspaceGroup.get(...).roots`, instantiat
 
 ## Outcomes & Retrospective
 
-To be filled in at completion. Compare the delivered behavior against the Purpose: a user can create a local, same-host multi-root workspace, see/edit/search several repos and folders in one window, run per-root terminals, and run a single agent across all roots, with the grouping persisted across restarts after M7.
+Delivered (2026-06-19), all seven milestones + the cross-root search follow-up, on branch `claude/keen-euler-e9b3x8`. Against the Purpose:
+
+- **Group container & roots** — host `workspaceGroup` tRPC router (create/get/list/rename/addRoot/removeRoot/reorderRoots/setDefaultRoot/delete/prepareAgentRoot), `WorkspaceGroupResolver`, `getServiceForRootId`. Storage is behind the `WorkspaceGroupStore` interface: in-memory through M1–M6, swapped to a SQLite-backed store in M7 (durable across restarts). ✅
+- **One explorer, many roots** — `GroupFilesTab`: N independent `useFileTree` trees, per-`kind` addressing, unavailable roots shown not crashed. ✅
+- **One editor across roots** — panes engine unchanged; `FilePaneData.rootId` routes reads via `{groupId,rootId}`; folder roots are read-only (host write path is workspaceId-only). ✅
+- **Per-git-root Changes** — `GroupChangesTab`: one `useGitStatus` section per `kind:"workspace"` root, folder roots skipped. ✅
+- **Terminals targeting any root** — `useGroupTerminalLauncher.createForRoot` → `{rootTarget:{groupId,rootId}}` (incl. folder roots). ✅
+- **One agent across all roots** — `prepareAgentRoot` symlinks each root into `~/.superset/group-roots/<id>/`; combined-agent terminal launches at that synthetic parent with `SUPERSET_ROOTS` set. ✅
+- **Cross-root quick-open** — `useGroupFileSearch` fans out `searchFiles` across roots, score-ranked merge with per-root labels (scoped Cmd/Ctrl+P). ✅ (Cross-root content search deferred — no panel to mirror.)
+- **Create/manage from the UI** — "Multi-root workspaces" sidebar section + create/manage dialogs (add existing workspace / add folder via native picker / remove / reorder / set-default / rename / delete). ✅
+
+No cloud (`packages/db`/`packages/trpc`) changes; no new third-party dependencies; `packages/panes`, `packages/workspace-fs`, `packages/workspace-client` unchanged (only instantiated per-root). Standing gates were green at every milestone: full-monorepo `typecheck` 28/28, `bun run lint` exit 0, host-service tests 722 pass / 0 fail.
+
+**Validation status:** The automated gates (typecheck, lint, host + group unit tests) and a renderer/main bundle build are the machine-checkable evidence. The plan's interactive end-to-end acceptance (sign in as dev, create a group with two repos + a folder via the UI, open files from each, per-root Changes, launch the combined agent and `ls -la` the symlinks, quit/relaunch for restart persistence) requires a human at the running Electron app with dev credentials and was NOT executed by the implementation agents — see the handoff checklist in the final summary.
+
+**Deferred / follow-ups:** (1) cross-root **content** search (host-ready; needs a panel UX); (2) folder-root **fs-event live watching** (`TODO(M4-followup)`; needs a host change to emit `fs:events` for folder roots — they refresh on demand today); (3) folder-root **writes/save** (host write path is `workspaceId`-only; folder files are read-only); (4) on host restart, workspace-less group/folder terminals are adoptable but not respawnable. None block the Purpose.
 
 
 ---
