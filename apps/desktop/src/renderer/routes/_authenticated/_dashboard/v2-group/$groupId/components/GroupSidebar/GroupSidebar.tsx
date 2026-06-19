@@ -4,6 +4,7 @@ import { SidebarHeader } from "../../../../v2-workspace/$workspaceId/components/
 import type { SidebarTabDefinition } from "../../../../v2-workspace/$workspaceId/components/WorkspaceSidebar/types";
 import { GroupChangesTab } from "../GroupChangesTab";
 import { GroupFilesTab } from "../GroupFilesTab";
+import { GroupManageButton } from "../GroupManageButton";
 
 type GroupSidebarTabId = "files" | "changes";
 
@@ -60,10 +61,16 @@ export function GroupSidebar({
 		return () => ro.disconnect();
 	}, []);
 
+	// The manage action (add/remove/reorder/set-default/rename) lives in the
+	// header so it's reachable while a group is open; it refreshes this shell's
+	// `workspaceGroup.get` directly (see GroupManageButton).
+	const manageAction = <GroupManageButton variant="icon" />;
+
 	const filesTab: SidebarTabDefinition = {
 		id: "files",
 		label: "Files",
 		icon: LuFile,
+		actions: manageAction,
 		content: (
 			<GroupFilesTab
 				selectedFilePath={selectedFilePath}
@@ -76,6 +83,7 @@ export function GroupSidebar({
 		id: "changes",
 		label: "Changes",
 		icon: LuGitCompareArrows,
+		actions: manageAction,
 		content: (
 			<GroupChangesTab
 				selectedFilePath={selectedFilePath}

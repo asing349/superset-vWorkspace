@@ -33,6 +33,7 @@ import { DashboardSidebarHoverCardOverlay } from "./components/DashboardSidebarH
 import { DashboardSidebarPortsList } from "./components/DashboardSidebarPortsList";
 import { DashboardSidebarProjectSection } from "./components/DashboardSidebarProjectSection";
 import { DashboardSidebarSectionRenameProvider } from "./components/DashboardSidebarSectionRenameContext";
+import { DashboardSidebarWorkspaceGroupsSection } from "./components/DashboardSidebarWorkspaceGroupsSection";
 import { V2SetupScriptCard } from "./components/V2SetupScriptCard";
 import { useDashboardSidebarData } from "./hooks/useDashboardSidebarData";
 import { useDashboardSidebarShortcuts } from "./hooks/useDashboardSidebarShortcuts";
@@ -228,6 +229,10 @@ export function DashboardSidebar({
 									document.body,
 								)}
 							</DndContext>
+
+							<DashboardSidebarWorkspaceGroupsSection
+								isCollapsed={isCollapsed}
+							/>
 						</div>
 						{!isCollapsed && <DashboardSidebarPortsList />}
 						{!isCollapsed && activeV2Project && activeHostUrl && (

@@ -1,0 +1,1 @@
+export { WorkspaceGroupManageDialog } from "./WorkspaceGroupManageDialog";

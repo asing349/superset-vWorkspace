@@ -8,6 +8,7 @@ import type {
 	PaneViewerData,
 } from "../../v2-workspace/$workspaceId/types";
 import { GroupEmptyState } from "./components/GroupEmptyState";
+import { GroupManageButton } from "./components/GroupManageButton";
 import { GroupSidebar } from "./components/GroupSidebar";
 import { useGroupFileNavigation } from "./hooks/useGroupFileNavigation";
 import { useGroupPaneLayout } from "./hooks/useGroupPaneLayout";
@@ -72,7 +73,10 @@ function V2GroupPage() {
 				data-group-id={groupId}
 			>
 				{isEmptyGroup ? (
-					<GroupEmptyState groupName={group.name} />
+					<GroupEmptyState
+						groupName={group.name}
+						action={<GroupManageButton variant="button" />}
+					/>
 				) : (
 					<Workspace<PaneViewerData>
 						key={groupId}
