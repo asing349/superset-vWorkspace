@@ -67,7 +67,7 @@ These assumptions unblock planning. Each must be confirmed (moved to the Decisio
 - [x] (2026-06-19) M3 — `v2-group/$groupId` route, `WorkspaceGroupProvider`, group-scoped pane store + renderer-local layout persistence. New IDE shell (page/layout) querying `workspaceGroup.get`, one per-host `WorkspaceClientProvider`, `useGroupPaneLayout` store keyed by `groupId` persisting to new `v2WorkspaceGroupLocalState` collection; group-scoped pane registry + file navigation thread `groupId`+`rootId`; folder roots read-only; Q5 empty state. Committed `5738d6b64` — typecheck 28/28, lint clean.
 - [x] (2026-06-19) M4 — multi-root Files explorer (N trees) + multi-root Changes/git sections. `useFileTree` extended to a `{workspaceId,rootPath} | {groupId,rootId,rootPath}` union; `GroupFilesTab` (N independent per-root trees, per-`kind` addressing, `exists:false` shown unavailable); `GroupChangesTab` (per `kind:"workspace"` git root via `useGitStatus`); `GroupSidebar` mounted in the group shell; clicks → `useGroupFileNavigation` with the root's `rootId`. Committed `72aca0dd4` — typecheck 28/28, lint clean, group tests 3 pass. Folder-root fs-event watching deferred (TODO, needs host change).
 - [x] (2026-06-19) M5 — sidebar switcher entry + create/add-folder/remove/reorder/set-default management UI. "Multi-root workspaces" DashboardSidebar section (list/create/navigate); create + manage dialogs wired to all `workspaceGroup.*` mutations; add-folder uses the native `window.selectDirectory` IPC picker; add-existing-workspace lists local-host worktrees. Committed `9a8c630a5` — typecheck 28/28, lint clean, sidebar tests pass.
-- [ ] M6 — agent spanning: per-root terminals, then synthetic-parent combined agent root + `SUPERSET_ROOTS` env.
+- [~] (2026-06-19) M6 — agent spanning. **Host done** (`14dce23c9`): `workspaceGroup.prepareAgentRoot` (idempotent symlink root under `~/.superset/group-roots/<id>/`), terminal targeting `{groupId, rootId|agentRoot}` (incl. folder roots, null `originWorkspaceId`), `SUPERSET_ROOTS` (newline-separated) env; plus group-addressed `searchFiles`/`searchContent` (#9, host part). **Renderer remaining**: group-shell UI to open per-root terminals + launch the combined agent, and cross-root quick-open/search fan-out.
 - [ ] M7 — SQL: host SQLite `workspace_groups` + `workspace_group_roots` tables; swap in-memory store for SQLite-backed store.
 
 Use timestamps (e.g. `- [x] (2026-06-19 06:30Z) ...`) when checking items off, to measure rate of progress. Split any partially complete item into "done: X / remaining: Y".
@@ -123,6 +123,16 @@ Use timestamps (e.g. `- [x] (2026-06-19 06:30Z) ...`) when checking items off, t
 - (M5) **Two QueryClients:** the open-group `workspaceGroup.get` runs inside the per-host `WorkspaceClientProvider` (cache key `${groupId}:${hostUrl}`), while the sidebar's `workspaceGroup.list` runs on the app-level QueryClient. A single `invalidateQueries` can't refresh both. Sidebar mutations invalidate `list`; for an OPEN group, the in-shell `GroupManageButton` threads `useWorkspaceGroup().refetchGroup` as `onMutated`. (Relevant for any future cross-client cache work.)
 
 - (M5) Reorder uses up/down buttons wired to `reorderRoots` (no drag-and-drop dependency added), honoring "no new dependencies."
+
+- (M6 host) `~/.superset` base dir resolution is `process.env.SUPERSET_HOME_DIR?.trim() || join(homedir(), ".superset")` (matches `anthropic-runtime-env.ts` / `worktree-paths.ts`); agent roots live at `<base>/group-roots/<groupId>/`. Not hardcoded.
+
+- (M6 host, Q3) Symlinks behave well (create/reconcile/drift/skip-missing all tested). Sharp edge handled: `existsSync` FOLLOWS symlinks and reports `false` for a dangling link → `EEXIST` on re-create; used `lstatSync` to detect the link itself. Labels are sanitized (strip `/ \ NUL`, leading dots) and de-duped (`name`, `name-2`, …) so a label can't escape the parent dir. Symlink mechanism retained per Q3 default — no mechanism switch needed.
+
+- (M6 host) `SUPERSET_ROOTS` separator is **newline** (`\n`), not `:` — colons legitimately appear in paths. `SUPERSET_ROOT_PATH` stays = `agentRootPath` for backward compatibility.
+
+- (M6 host) zod v4 forbids `.extend()` on a refined schema (`use .safeExtend()`); the terminal-create schema was split into an unrefined base object + shared refinements so `launchSession.extend()` keeps working (this had broken 33 terminal tests).
+
+- (M6 host) `terminalSessions.originWorkspaceId` is already nullable (`onDelete: "set null"`), so folder/group terminal sessions persist with `null` — no schema change. `TerminalSessionSummary.workspaceId` was kept as `string` (null→`""`) rather than widened to `string|null`, to avoid breaking the renderer consumer `terminalSessionBelongsToWorkspace` (`""` never matches a real id). On host restart a workspace-less group/folder terminal can be *adopted* (live PTY) but not *respawned* until M7's durable store exists; it returns a clear "open a new terminal" message instead of crashing.
 
 
 ## Decision Log
