@@ -1,1 +1,4 @@
-export { useGroupPaneRegistry } from "./useGroupPaneRegistry";
+export {
+	type GroupTerminalOpenFileInput,
+	useGroupPaneRegistry,
+} from "./useGroupPaneRegistry";

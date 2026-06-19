@@ -1,9 +1,10 @@
 import type { PaneRegistry, RendererContext } from "@superset/panes";
 import { cn } from "@superset/ui/utils";
-import { Circle } from "lucide-react";
+import { Circle, TerminalSquare } from "lucide-react";
 import { useMemo } from "react";
 import { FileIcon } from "renderer/lib/fileIcons";
 import { getBaseName } from "renderer/lib/pathBasename";
+import { terminalRuntimeRegistry } from "renderer/lib/terminal/terminal-runtime-registry";
 import { FilePane } from "../../../../v2-workspace/$workspaceId/hooks/usePaneRegistry/components/FilePane";
 import { FilePaneHeaderExtras } from "../../../../v2-workspace/$workspaceId/hooks/usePaneRegistry/components/FilePane/components/FilePaneHeaderExtras";
 import {
@@ -14,12 +15,21 @@ import {
 import type {
 	FilePaneData,
 	PaneViewerData,
+	TerminalPaneData,
 } from "../../../../v2-workspace/$workspaceId/types";
 import {
 	type ResolvedGroupRoot,
 	useWorkspaceGroup,
 } from "../../providers/WorkspaceGroupProvider";
 import { GroupReadOnlyFilePane } from "./components/GroupReadOnlyFilePane";
+import { GroupTerminalPane } from "./components/GroupTerminalPane";
+
+/** A file-link open request originating from a group terminal pane. */
+export interface GroupTerminalOpenFileInput {
+	rootId: string;
+	filePath: string;
+	openInNewTab?: boolean;
+}
 
 function getFileName(filePath: string): string {
 	return getBaseName(filePath);
@@ -104,11 +114,20 @@ function GroupFilePaneTabTitle({
  * (the M2 seam). It opens no additional host connection — it reuses the single
  * `WorkspaceClientProvider` opened by `WorkspaceGroupProvider`.
  *
- * M3 scope: the `file` pane (the only path-bearing pane wired in M3). Terminal,
- * chat, browser, diff, and comment panes are added in M4/M6 as their group
- * wiring lands; until then the group shell renders an empty pane area.
+ * M3 scope: the `file` pane (the only path-bearing pane wired in M3). M6 adds
+ * the `terminal` pane (per-root + combined-agent terminals). Chat, browser,
+ * diff, and comment panes are added as their group wiring lands.
  */
-export function useGroupPaneRegistry(): PaneRegistry<PaneViewerData> {
+export function useGroupPaneRegistry({
+	onOpenFile,
+}: {
+	/**
+	 * Open a file clicked in a group terminal's output into the editor area,
+	 * stamped with the originating terminal's `rootId`. Wired to
+	 * `useGroupFileNavigation.openFilePane` by the group page.
+	 */
+	onOpenFile: (input: GroupTerminalOpenFileInput) => void;
+}): PaneRegistry<PaneViewerData> {
 	// `roots` is a stable, memoized array from WorkspaceGroupProvider, so the
 	// registry memo depends on it directly.
 	const { groupId, roots } = useWorkspaceGroup();
@@ -123,6 +142,29 @@ export function useGroupPaneRegistry(): PaneRegistry<PaneViewerData> {
 			const groupAddressing: FileDocumentGroupAddressing | null =
 				data.rootId !== undefined ? { groupId, rootId: data.rootId } : null;
 			return { workspaceId, readOnly, groupAddressing };
+		};
+
+		// The workspaceId used to stat a terminal's file-path links: only
+		// `kind: "workspace"` roots have one. Folder roots / combined agent root
+		// (no rootId match) get `null`, so terminal file links there are
+		// non-interactive (statPath is workspaceId-addressed).
+		const resolveStatWorkspaceId = (
+			rootId: string | undefined,
+		): string | null => {
+			if (!rootId) return null;
+			const root = rootsById.get(rootId) ?? null;
+			if (root && root.kind === "workspace" && root.workspaceId) {
+				return root.workspaceId;
+			}
+			return null;
+		};
+
+		// Human label for a terminal's targeting root, shown until the PTY reports
+		// its own title. The combined agent root (no rootId) is labelled "Agent".
+		const resolveTerminalLabel = (rootId: string | undefined): string => {
+			if (!rootId) return "Agent";
+			const root = rootsById.get(rootId) ?? null;
+			return root?.label ?? "Terminal";
 		};
 
 		return {
@@ -205,6 +247,53 @@ export function useGroupPaneRegistry(): PaneRegistry<PaneViewerData> {
 						d.key === "close-pane" ? { ...d, label: "Close File" } : d,
 					),
 			},
+			terminal: {
+				getIcon: () => <TerminalSquare className="size-3.5 shrink-0" />,
+				getTitle: (pane) =>
+					resolveTerminalLabel((pane.data as TerminalPaneData).rootId),
+				// Live PTY title (e.g. the running command/agent) once it reports
+				// one, falling back to the root label.
+				titleSource: (pane) => {
+					const { terminalId } = pane.data as TerminalPaneData;
+					const instanceId = pane.id;
+					return {
+						subscribe: (callback) =>
+							terminalRuntimeRegistry.onTitleChange(
+								terminalId,
+								callback,
+								instanceId,
+							),
+						getSnapshot: () =>
+							terminalRuntimeRegistry
+								.getTitle(terminalId, instanceId)
+								?.trim() || undefined,
+					};
+				},
+				onAfterClose: (pane) => {
+					// Group/agent terminal sessions have no owning workspaceId, so the
+					// workspaceId-keyed killSession path doesn't apply. Disposing the
+					// renderer runtime tears down the transport and lets the host PTY
+					// exit when its socket closes.
+					const { terminalId } = pane.data as TerminalPaneData;
+					terminalRuntimeRegistry.dispose(terminalId);
+				},
+				renderPane: (ctx: RendererContext<PaneViewerData>) => {
+					const data = ctx.pane.data as TerminalPaneData;
+					return (
+						<GroupTerminalPane
+							ctx={ctx}
+							terminalId={data.terminalId}
+							rootId={data.rootId ?? null}
+							statWorkspaceId={resolveStatWorkspaceId(data.rootId)}
+							onOpenFile={onOpenFile}
+						/>
+					);
+				},
+				contextMenuActions: (_ctx, defaults) =>
+					defaults.map((d) =>
+						d.key === "close-pane" ? { ...d, label: "Close Terminal" } : d,
+					),
+			},
 		};
-	}, [groupId, roots]);
+	}, [groupId, roots, onOpenFile]);
 }

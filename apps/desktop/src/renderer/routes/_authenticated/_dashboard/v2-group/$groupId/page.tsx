@@ -1,18 +1,22 @@
 import { Workspace } from "@superset/panes";
+import { Button } from "@superset/ui/button";
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { useCallback, useState } from "react";
+import { BsTerminalPlus } from "react-icons/bs";
 import { ResizablePanel } from "renderer/screens/main/components/ResizablePanel";
 import { useStore } from "zustand";
 import type {
 	FilePaneData,
 	PaneViewerData,
 } from "../../v2-workspace/$workspaceId/types";
+import { GroupAddTabMenu } from "./components/GroupAddTabMenu";
 import { GroupEmptyState } from "./components/GroupEmptyState";
 import { GroupManageButton } from "./components/GroupManageButton";
 import { GroupSidebar } from "./components/GroupSidebar";
 import { useGroupFileNavigation } from "./hooks/useGroupFileNavigation";
 import { useGroupPaneLayout } from "./hooks/useGroupPaneLayout";
 import { useGroupPaneRegistry } from "./hooks/useGroupPaneRegistry";
+import { useGroupTerminalOpeners } from "./hooks/useGroupTerminalOpeners";
 import { useWorkspaceGroup } from "./providers/WorkspaceGroupProvider";
 
 export const Route = createFileRoute(
@@ -22,12 +26,31 @@ export const Route = createFileRoute(
 });
 
 function V2GroupPage() {
-	const { groupId, group, roots } = useWorkspaceGroup();
+	const { groupId, group, roots, defaultRoot } = useWorkspaceGroup();
 	const { store } = useGroupPaneLayout();
-	const registry = useGroupPaneRegistry();
 	const { openFilePane } = useGroupFileNavigation({ store });
+	const registry = useGroupPaneRegistry({ onOpenFile: openFilePane });
+	const { openRootTerminal, openAgentTerminal } = useGroupTerminalOpeners({
+		store,
+	});
 	const [sidebarWidth, setSidebarWidth] = useState(300);
 	const [isSidebarResizing, setIsSidebarResizing] = useState(false);
+
+	// Terminal actions surface in the pane-area "+" menu (and the empty-pane
+	// state). Awaited create/launch is fire-and-forget from the click handler;
+	// errors are surfaced by the launcher's tRPC client.
+	const handleAddRootTerminal = useCallback(
+		(rootId: string) => {
+			void openRootTerminal(rootId);
+		},
+		[openRootTerminal],
+	);
+	const handleLaunchAgent = useCallback(() => {
+		void openAgentTerminal();
+	}, [openAgentTerminal]);
+	const handleOpenDefaultTerminal = useCallback(() => {
+		if (defaultRoot) void openRootTerminal(defaultRoot.rootId);
+	}, [defaultRoot, openRootTerminal]);
 
 	// Track the active file pane's absolute path so the sidebar can highlight the
 	// open file. Mirrors the single-workspace shell's `selectedFilePath`, derived
@@ -82,9 +105,39 @@ function V2GroupPage() {
 						key={groupId}
 						registry={registry}
 						store={store}
+						renderAddTabMenu={() => (
+							<GroupAddTabMenu
+								onAddRootTerminal={handleAddRootTerminal}
+								onLaunchAgent={handleLaunchAgent}
+							/>
+						)}
 						renderEmptyState={() => (
-							<div className="flex h-full w-full flex-1 items-center justify-center p-8 text-center text-sm text-muted-foreground select-text">
-								Open a file from one of this workspace's roots to get started.
+							<div className="flex h-full w-full flex-1 flex-col items-center justify-center gap-4 p-8 text-center text-sm text-muted-foreground select-text">
+								<p>
+									Open a file from one of this workspace's roots, or start a
+									terminal.
+								</p>
+								<div className="flex flex-wrap items-center justify-center gap-2">
+									<Button
+										type="button"
+										variant="outline"
+										size="sm"
+										className="gap-1.5"
+										disabled={!defaultRoot}
+										onClick={handleOpenDefaultTerminal}
+									>
+										<BsTerminalPlus className="size-4" />
+										New Terminal
+									</Button>
+									<Button
+										type="button"
+										variant="outline"
+										size="sm"
+										onClick={handleLaunchAgent}
+									>
+										Launch combined agent
+									</Button>
+								</div>
 							</div>
 						)}
 					/>
