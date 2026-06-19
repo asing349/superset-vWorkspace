@@ -18,7 +18,7 @@ import { createGitFactory } from "./runtime/git";
 import { runMainWorkspaceSweep } from "./runtime/main-workspace-sweep";
 import { PullRequestRuntimeManager } from "./runtime/pull-requests";
 import {
-	createInMemoryWorkspaceGroupStore,
+	createSqliteWorkspaceGroupStore,
 	WorkspaceGroupResolver,
 } from "./runtime/workspace-groups";
 import { registerWorkspaceTerminalRoute } from "./terminal/terminal";
@@ -90,10 +90,11 @@ export function createApp(options: CreateAppOptions): CreateAppResult {
 	const execGh: ExecGh = options.execGh ?? defaultExecGh;
 
 	// Multi-root workspace ("group") storage and root resolution. The store is
-	// in-memory until M7 swaps in a SQLite-backed implementation behind the same
-	// interface; the resolver maps each root to an absolute on-disk path. A single
-	// instance of each is shared via the tRPC context.
-	const workspaceGroupStore = createInMemoryWorkspaceGroupStore();
+	// SQLite-backed (M7) so groups survive host restarts, sitting behind the same
+	// `WorkspaceGroupStore` interface the router/UI already code against; the
+	// resolver maps each root to an absolute on-disk path. A single instance of
+	// each is shared via the tRPC context.
+	const workspaceGroupStore = createSqliteWorkspaceGroupStore(db);
 	const workspaceGroupResolver = new WorkspaceGroupResolver({ db });
 
 	const filesystem = new WorkspaceFilesystemManager({

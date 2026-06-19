@@ -165,3 +165,42 @@ export const workspaces = sqliteTable(
 		index("workspaces_pull_request_id_idx").on(table.pullRequestId),
 	],
 );
+
+/**
+ * Multi-root workspaces ("groups"). A group is a named, ordered list of roots
+ * (see `workspaceGroupRoots`). Durable host storage for what M1–M6 held in the
+ * in-memory `WorkspaceGroupStore`; the SQLite-backed store reads/writes these
+ * two tables. Local to one machine, like a `.code-workspace` file.
+ */
+export const workspaceGroups = sqliteTable("workspace_groups", {
+	id: text().primaryKey(),
+	name: text().notNull(),
+	defaultRootId: text("default_root_id"),
+	createdAt: integer("created_at")
+		.notNull()
+		.$defaultFn(() => Date.now()),
+});
+
+/**
+ * One root per row. `id` is the `rootId` (unique within its group). When a
+ * `kind: "workspace"` root's underlying worktree row is deleted, the cascade
+ * removes that root; a `kind: "folder"` root has a null `workspaceId` and is
+ * unaffected. `position` is the array index, re-stamped on add/remove/reorder.
+ */
+export const workspaceGroupRoots = sqliteTable(
+	"workspace_group_roots",
+	{
+		id: text().primaryKey(),
+		groupId: text("group_id")
+			.notNull()
+			.references(() => workspaceGroups.id, { onDelete: "cascade" }),
+		kind: text().notNull(),
+		workspaceId: text("workspace_id").references(() => workspaces.id, {
+			onDelete: "cascade",
+		}),
+		folderPath: text("folder_path"),
+		label: text().notNull(),
+		position: integer().notNull(),
+	},
+	(t) => [index("workspace_group_roots_group_id_idx").on(t.groupId)],
+);

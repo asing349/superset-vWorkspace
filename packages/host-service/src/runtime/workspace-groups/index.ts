@@ -8,6 +8,7 @@ export {
 	WorkspaceGroupResolver,
 	type WorkspaceGroupResolverOptions,
 } from "./resolve.ts";
+export { createSqliteWorkspaceGroupStore } from "./sqlite-store.ts";
 export {
 	createInMemoryWorkspaceGroupStore,
 	type WorkspaceGroupRootInput,
