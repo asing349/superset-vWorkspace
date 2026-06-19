@@ -64,13 +64,16 @@ import {
 	type FailedWorkspaceCreateRow,
 	failedWorkspaceCreateSchema,
 	healV2UserPreferences,
+	healWorkspaceGroupLocalState,
 	healWorkspaceLocalState,
 	type V2TerminalPresetRow,
 	type V2UserPreferencesRow,
 	v2TerminalPresetSchema,
 	v2UserPreferencesSchema,
+	type WorkspaceGroupLocalStateRow,
 	type WorkspaceLocalStateRow,
 	type WorkspacesCreateInput,
+	workspaceGroupLocalStateSchema,
 	workspaceLocalStateSchema,
 } from "./dashboardSidebarLocal";
 import { withReadHeal } from "./withReadHeal";
@@ -178,6 +181,13 @@ export interface OrgCollections {
 		LocalStorageCollectionUtils,
 		typeof workspaceLocalStateSchema,
 		z.input<typeof workspaceLocalStateSchema>
+	>;
+	v2WorkspaceGroupLocalState: Collection<
+		WorkspaceGroupLocalStateRow,
+		string,
+		LocalStorageCollectionUtils,
+		typeof workspaceGroupLocalStateSchema,
+		z.input<typeof workspaceGroupLocalStateSchema>
 	>;
 	v2SidebarSections: Collection<
 		DashboardSidebarSectionRow,
@@ -826,6 +836,25 @@ function createOrgCollections(organizationId: string): OrgCollections {
 		basicIndexConfig,
 	);
 
+	// Renderer-local pane layout for multi-root workspaces ("groups"), keyed by
+	// groupId. Mirrors v2WorkspaceLocalState (per-workspace layout keyed by
+	// workspaceId) so the group shell persists its own, distinct pane layout.
+	const v2WorkspaceGroupLocalState = createIndexedCollection(
+		localStorageCollectionOptions(
+			withReadHeal(
+				{
+					id: `v2_workspace_group_local_state-${organizationId}`,
+					storageKey: `v2-workspace-group-local-state-${organizationId}`,
+					schema: workspaceGroupLocalStateSchema,
+					// Explicit type so `withReadHeal`'s passthrough generic keeps the
+					// linkage between schema and getKey for downstream inference.
+					getKey: (item: WorkspaceGroupLocalStateRow) => item.groupId,
+				},
+				healWorkspaceGroupLocalState,
+			),
+		),
+	);
+
 	const v2SidebarSections = createIndexedCollection(
 		localStorageCollectionOptions({
 			id: `v2_sidebar_sections-${organizationId}`,
@@ -905,6 +934,7 @@ function createOrgCollections(organizationId: string): OrgCollections {
 		automationRuns,
 		v2SidebarProjects,
 		v2WorkspaceLocalState,
+		v2WorkspaceGroupLocalState,
 		v2SidebarSections,
 		v2TerminalPresets,
 		v2UserPreferences,

@@ -105,6 +105,41 @@ const WORKSPACE_LOCAL_STATE_OPTIONAL_DEFAULTS = {
 	>,
 };
 
+/**
+ * Renderer-local pane layout for a multi-root workspace ("group"), keyed by the
+ * group id. Mirrors `workspaceLocalStateSchema` but is intentionally minimal:
+ * groups only persist their pane layout here (the group's name/roots/default
+ * root live on the host via the `workspaceGroup` router). Identity fields
+ * (`groupId`, `createdAt`, `paneLayout`) have no synthesizable default and pass
+ * through from the stored row.
+ */
+export const workspaceGroupLocalStateSchema = z.object({
+	groupId: z.string(),
+	createdAt: persistedDateSchema,
+	paneLayout: paneWorkspaceStateSchema,
+});
+
+export type WorkspaceGroupLocalStateRow = z.infer<
+	typeof workspaceGroupLocalStateSchema
+>;
+
+/**
+ * Heal a stored workspaceGroupLocalState row against current defaults. The
+ * schema has no optional/defaulted fields today, so this is a structural
+ * passthrough that mirrors `healWorkspaceLocalState` so future additive fields
+ * have a single place to synthesize defaults at read time.
+ */
+export function healWorkspaceGroupLocalState(
+	raw: unknown,
+): WorkspaceGroupLocalStateRow {
+	const r = (
+		raw && typeof raw === "object" ? raw : {}
+	) as Partial<WorkspaceGroupLocalStateRow>;
+	return {
+		...r,
+	} as WorkspaceGroupLocalStateRow;
+}
+
 export const dashboardSidebarSectionSchema = z.object({
 	sectionId: z.string().uuid(),
 	projectId: z.string().uuid(),
