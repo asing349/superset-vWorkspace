@@ -66,7 +66,7 @@ These assumptions unblock planning. Each must be confirmed (moved to the Decisio
 - [x] (2026-06-19) M2 — `rootId` discriminator on pane data; route filesystem/git calls by root. Optional `rootId?` on FilePaneData/TerminalPaneData/DiffPaneData; reads route via `{groupId,rootId}` when set, else `{workspaceId}` (single-workspace unchanged); git stays `workspaceId`-keyed (no change needed). Committed `7857b249f` — typecheck 28/28, lint clean.
 - [x] (2026-06-19) M3 — `v2-group/$groupId` route, `WorkspaceGroupProvider`, group-scoped pane store + renderer-local layout persistence. New IDE shell (page/layout) querying `workspaceGroup.get`, one per-host `WorkspaceClientProvider`, `useGroupPaneLayout` store keyed by `groupId` persisting to new `v2WorkspaceGroupLocalState` collection; group-scoped pane registry + file navigation thread `groupId`+`rootId`; folder roots read-only; Q5 empty state. Committed `5738d6b64` — typecheck 28/28, lint clean.
 - [x] (2026-06-19) M4 — multi-root Files explorer (N trees) + multi-root Changes/git sections. `useFileTree` extended to a `{workspaceId,rootPath} | {groupId,rootId,rootPath}` union; `GroupFilesTab` (N independent per-root trees, per-`kind` addressing, `exists:false` shown unavailable); `GroupChangesTab` (per `kind:"workspace"` git root via `useGitStatus`); `GroupSidebar` mounted in the group shell; clicks → `useGroupFileNavigation` with the root's `rootId`. Committed `72aca0dd4` — typecheck 28/28, lint clean, group tests 3 pass. Folder-root fs-event watching deferred (TODO, needs host change).
-- [ ] M5 — sidebar switcher entry + create/add-folder/remove/reorder/set-default management UI.
+- [x] (2026-06-19) M5 — sidebar switcher entry + create/add-folder/remove/reorder/set-default management UI. "Multi-root workspaces" DashboardSidebar section (list/create/navigate); create + manage dialogs wired to all `workspaceGroup.*` mutations; add-folder uses the native `window.selectDirectory` IPC picker; add-existing-workspace lists local-host worktrees. Committed `9a8c630a5` — typecheck 28/28, lint clean, sidebar tests pass.
 - [ ] M6 — agent spanning: per-root terminals, then synthetic-parent combined agent root + `SUPERSET_ROOTS` env.
 - [ ] M7 — SQL: host SQLite `workspace_groups` + `workspace_group_roots` tables; swap in-memory store for SQLite-backed store.
 
@@ -117,6 +117,12 @@ Use timestamps (e.g. `- [x] (2026-06-19 06:30Z) ...`) when checking items off, t
 - (M4) `ResolvedWorkspaceGroupRoot` carries no `groupId`; folder-root FS addressing gets `groupId` from `useWorkspaceGroup()`, threaded into each section as a prop.
 
 - (M4) **Folder-root fs-event watching is deferred (`TODO(M4-followup)` in `useFileTree.ts`).** The renderer event bus filters `fs:events` by `workspaceId`, which folder roots lack; live watching for folder roots needs a host change. `kind:"workspace"` roots keep live fs-events watching; folder trees refresh on demand (toggle/refresh button).
+
+- (M5) The native folder picker reuses `electronTrpc.window.selectDirectory` (same as `useFolderFirstImport`) — Electron main-process IPC, so the renderer never touches Node. "Add existing workspace" reads the `v2Workspaces` collection (joined to `v2Projects`) filtered to the local host (`hostId === machineId`), because a `kind:"workspace"` root must resolve to a `worktreePath` in the local host's `workspaces` table.
+
+- (M5) **Two QueryClients:** the open-group `workspaceGroup.get` runs inside the per-host `WorkspaceClientProvider` (cache key `${groupId}:${hostUrl}`), while the sidebar's `workspaceGroup.list` runs on the app-level QueryClient. A single `invalidateQueries` can't refresh both. Sidebar mutations invalidate `list`; for an OPEN group, the in-shell `GroupManageButton` threads `useWorkspaceGroup().refetchGroup` as `onMutated`. (Relevant for any future cross-client cache work.)
+
+- (M5) Reorder uses up/down buttons wired to `reorderRoots` (no drag-and-drop dependency added), honoring "no new dependencies."
 
 
 ## Decision Log
