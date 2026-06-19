@@ -1,8 +1,9 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
-import type {
-	WorkspaceGroup,
-	WorkspaceGroupRootInput,
+import {
+	prepareAgentRoot,
+	type WorkspaceGroup,
+	type WorkspaceGroupRootInput,
 } from "../../../runtime/workspace-groups";
 import type { HostServiceContext } from "../../../types";
 import { protectedProcedure, queryProcedure, router } from "../../index";
@@ -162,5 +163,31 @@ export const workspaceGroupRouter = router({
 		.mutation(({ ctx, input }) => {
 			ctx.workspaceGroupStore.delete(input.id);
 			return { id: input.id };
+		}),
+
+	/**
+	 * Build (idempotently) the combined agent root for a group: a synthetic
+	 * parent dir under `~/.superset/group-roots/<groupId>/` holding one symbolic
+	 * link per root (named by the root's label, de-duplicated). Reconciles on
+	 * every call — adds missing links, removes stale ones, and skips roots whose
+	 * target no longer exists. A single CLI agent launched with
+	 * `cwd = agentRootPath` then sees every root as a subdirectory.
+	 */
+	prepareAgentRoot: protectedProcedure
+		.input(z.object({ groupId: z.string() }))
+		.mutation(({ ctx, input }) => {
+			const group = ctx.workspaceGroupStore.get(input.groupId);
+			if (!group) {
+				throw new TRPCError({
+					code: "NOT_FOUND",
+					message: `Workspace group not found: ${input.groupId}`,
+				});
+			}
+			const resolved = resolveGroup(ctx, group);
+			const { agentRootPath } = prepareAgentRoot({
+				groupId: group.id,
+				roots: resolved.roots,
+			});
+			return { agentRootPath };
 		}),
 });

@@ -205,7 +205,8 @@ type ShellReadyState = "pending" | "ready" | "timed_out" | "unsupported";
 
 interface TerminalSession {
 	terminalId: string;
-	workspaceId: string;
+	/** Null for folder-root / group sessions that have no owning workspace. */
+	workspaceId: string | null;
 	pty: DaemonPty;
 	cols: number;
 	rows: number;
@@ -339,6 +340,12 @@ function pruneAndCountOpenSockets(session: TerminalSession): number {
 
 export interface TerminalSessionSummary {
 	terminalId: string;
+	/**
+	 * Empty string for folder-root / group sessions that have no owning
+	 * workspace (their in-memory `workspaceId` is null). Kept as a plain string
+	 * so existing single-workspace consumers (which compare against a real id)
+	 * are unaffected — an empty string never matches a real workspaceId.
+	 */
 	workspaceId: string;
 	createdAt: number;
 	exited: boolean;
@@ -362,7 +369,7 @@ export function listTerminalSessions(
 		.filter((session) => includeExited || !session.exited)
 		.map((session) => ({
 			terminalId: session.terminalId,
-			workspaceId: session.workspaceId,
+			workspaceId: session.workspaceId ?? "",
 			createdAt: session.createdAt,
 			exited: session.exited,
 			exitCode: session.exitCode,
@@ -413,7 +420,9 @@ export function writeInputToSession({
 	if (!session) {
 		return { error: "Terminal session not found" };
 	}
-	if (session.workspaceId !== workspaceId) {
+	// Folder-root / group sessions have a null workspaceId; ownership for those
+	// is by terminalId identity alone (the caller already holds the id).
+	if (session.workspaceId !== null && session.workspaceId !== workspaceId) {
 		return { error: "Terminal session does not belong to this workspace" };
 	}
 	if (session.exited) {
@@ -787,9 +796,30 @@ export async function disposeSessionsByWorkspaceId(
 	return { terminated, failed };
 }
 
+/**
+ * Folder-root / group terminal target. Lets a session be launched against a
+ * root that has no `workspaces` row (a `kind: "folder"` root, or a group's
+ * combined agent root). When present, the session's cwd, workspace path, and
+ * root path are derived from `rootPath` instead of a workspace lookup; the DB
+ * `originWorkspaceId` is left null. `groupRootPaths`, when set, is exported to
+ * the PTY as `SUPERSET_ROOTS`.
+ */
+export interface TerminalRootTarget {
+	rootPath: string;
+	/** Every root path of the group, for the SUPERSET_ROOTS env var. */
+	groupRootPaths?: string[];
+}
+
 interface CreateTerminalSessionOptions {
 	terminalId: string;
-	workspaceId: string;
+	/**
+	 * Owning workspace. Optional only when `rootTarget` is supplied (folder
+	 * roots / group sessions have no workspace row). Exactly one of
+	 * `workspaceId` or `rootTarget` must be provided.
+	 */
+	workspaceId?: string;
+	/** Folder-root / group target when there is no owning workspace. */
+	rootTarget?: TerminalRootTarget;
 	themeType?: "dark" | "light";
 	db: HostDb;
 	eventBus?: EventBus;
@@ -845,6 +875,7 @@ function getTerminalWorkspaceMismatchError({
 export async function createTerminalSessionInternal({
 	terminalId,
 	workspaceId,
+	rootTarget,
 	themeType,
 	db,
 	eventBus,
@@ -856,53 +887,107 @@ export async function createTerminalSessionInternal({
 	adoptOnly = false,
 	replayOnAdoption = true,
 }: CreateTerminalSessionOptions): Promise<TerminalSession | { error: string }> {
+	// A fresh spawn needs a target to resolve cwd + PTY env. Adoption reuses the
+	// daemon's still-live PTY (daemon.open is skipped), so it can recover a
+	// workspace-less group/folder session whose paths aren't in the DB row.
+	if (!workspaceId && !rootTarget && !adoptOnly) {
+		return {
+			error: "Terminal create requires either a workspaceId or a rootTarget",
+		};
+	}
+
 	const existing = sessions.get(terminalId);
 	if (existing) {
-		const mismatchError = getTerminalWorkspaceMismatchError({
-			terminalId,
-			ownerWorkspaceId: existing.workspaceId,
-			requestedWorkspaceId: workspaceId,
-		});
-		if (mismatchError) return { error: mismatchError };
+		if (workspaceId) {
+			const mismatchError = getTerminalWorkspaceMismatchError({
+				terminalId,
+				ownerWorkspaceId: existing.workspaceId,
+				requestedWorkspaceId: workspaceId,
+			});
+			if (mismatchError) return { error: mismatchError };
+		}
 
 		if (listed) existing.listed = true;
 		if (initialCommand) queueInitialCommand(existing, initialCommand);
 		return existing;
 	}
 
-	const existingRecord = db.query.terminalSessions
-		.findFirst({ where: eq(terminalSessions.id, terminalId) })
-		.sync();
-	const recordMismatchError = getTerminalWorkspaceMismatchError({
-		terminalId,
-		ownerWorkspaceId: existingRecord?.originWorkspaceId,
-		requestedWorkspaceId: workspaceId,
-	});
-	if (recordMismatchError) return { error: recordMismatchError };
-
-	const workspace = db.query.workspaces
-		.findFirst({ where: eq(workspaces.id, workspaceId) })
-		.sync();
-
-	if (!workspace) {
-		return { error: "Workspace not found" };
-	}
-	if (!existsSync(workspace.worktreePath)) {
-		return {
-			error: `Workspace worktree no longer exists: ${workspace.worktreePath}`,
-		};
+	if (workspaceId) {
+		const existingRecord = db.query.terminalSessions
+			.findFirst({ where: eq(terminalSessions.id, terminalId) })
+			.sync();
+		const recordMismatchError = getTerminalWorkspaceMismatchError({
+			terminalId,
+			ownerWorkspaceId: existingRecord?.originWorkspaceId,
+			requestedWorkspaceId: workspaceId,
+		});
+		if (recordMismatchError) return { error: recordMismatchError };
 	}
 
-	// Derive root path from the workspace's project
-	let rootPath = "";
-	const project = db.query.projects
-		.findFirst({ where: eq(projects.id, workspace.projectId) })
-		.sync();
-	if (project?.repoPath) {
-		rootPath = project.repoPath;
+	// Resolve the session's working directory and the workspace/root paths the
+	// PTY env advertises. Two cases:
+	//   1. A normal workspace session — look up the worktree + project repo.
+	//   2. A folder-root / group session (`rootTarget`) with no workspace row —
+	//      derive everything from the resolved root path. `originWorkspaceId`
+	//      stays null (the schema column is nullable for exactly this reason).
+	let resolvedWorkspaceId: string | null;
+	let workspacePath: string;
+	let rootPath: string;
+	let baseCwd: string;
+	let groupRootPaths: string[] | undefined;
+
+	if (workspaceId) {
+		const workspace = db.query.workspaces
+			.findFirst({ where: eq(workspaces.id, workspaceId) })
+			.sync();
+
+		if (!workspace) {
+			return { error: "Workspace not found" };
+		}
+		if (!existsSync(workspace.worktreePath)) {
+			return {
+				error: `Workspace worktree no longer exists: ${workspace.worktreePath}`,
+			};
+		}
+
+		// Derive root path from the workspace's project
+		rootPath = "";
+		const project = db.query.projects
+			.findFirst({ where: eq(projects.id, workspace.projectId) })
+			.sync();
+		if (project?.repoPath) {
+			rootPath = project.repoPath;
+		}
+		resolvedWorkspaceId = workspaceId;
+		workspacePath = workspace.worktreePath;
+		baseCwd = workspace.worktreePath;
+	} else if (rootTarget) {
+		if (!existsSync(rootTarget.rootPath)) {
+			return {
+				error: `Terminal root no longer exists: ${rootTarget.rootPath}`,
+			};
+		}
+		resolvedWorkspaceId = null;
+		workspacePath = rootTarget.rootPath;
+		rootPath = rootTarget.rootPath;
+		baseCwd = rootTarget.rootPath;
+		groupRootPaths = rootTarget.groupRootPaths;
+	} else {
+		// Adoption of a workspace-less session with no target (guarded above to
+		// only reach here when adoptOnly): the live PTY already holds the real
+		// cwd/env, so these placeholders are never sent to the daemon.
+		resolvedWorkspaceId = null;
+		workspacePath = "";
+		rootPath = "";
+		baseCwd = process.cwd();
 	}
 
-	const cwd = resolveTerminalCwd(cwdOverride, workspace.worktreePath);
+	// A stable, non-null key for port tracking and lifecycle broadcasts.
+	// Workspace sessions key by workspaceId (renderer filters terminal events by
+	// it); rootTarget sessions have no workspace, so key by terminalId.
+	const sessionEventKey = resolvedWorkspaceId ?? terminalId;
+
+	const cwd = resolveTerminalCwd(cwdOverride, baseCwd);
 	const cols = normalizeTerminalDimension(
 		requestedCols,
 		MIN_TERMINAL_COLS,
@@ -926,9 +1011,10 @@ export async function createTerminalSessionInternal({
 		themeType,
 		cwd,
 		terminalId,
-		workspaceId,
-		workspacePath: workspace.worktreePath,
+		workspaceId: resolvedWorkspaceId ?? "",
+		workspacePath,
 		rootPath,
+		groupRootPaths,
 		hostServiceVersion: process.env.HOST_SERVICE_VERSION || "unknown",
 		supersetEnv:
 			process.env.NODE_ENV === "development" ? "development" : "production",
@@ -1000,14 +1086,14 @@ export async function createTerminalSessionInternal({
 	db.insert(terminalSessions)
 		.values({
 			id: terminalId,
-			originWorkspaceId: workspaceId,
+			originWorkspaceId: resolvedWorkspaceId,
 			status: "active",
 			createdAt,
 		})
 		.onConflictDoUpdate({
 			target: terminalSessions.id,
 			set: {
-				originWorkspaceId: workspaceId,
+				originWorkspaceId: resolvedWorkspaceId,
 				status: "active",
 				createdAt,
 				endedAt: null,
@@ -1031,7 +1117,7 @@ export async function createTerminalSessionInternal({
 
 	const session: TerminalSession = {
 		terminalId,
-		workspaceId,
+		workspaceId: resolvedWorkspaceId,
 		pty,
 		cols,
 		rows,
@@ -1062,7 +1148,7 @@ export async function createTerminalSessionInternal({
 		modeTracker: createModeTracker(cols, rows),
 	};
 	sessions.set(terminalId, session);
-	portManager.upsertSession(terminalId, workspaceId, pty.pid);
+	portManager.upsertSession(terminalId, sessionEventKey, pty.pid);
 
 	// If the marker never arrives (broken wrapper, unsupported config),
 	// the timeout unblocks so the session degrades gracefully.
@@ -1137,7 +1223,7 @@ export async function createTerminalSessionInternal({
 				});
 
 				eventBus?.broadcastTerminalLifecycle({
-					workspaceId,
+					workspaceId: sessionEventKey,
 					terminalId,
 					eventType: "exit",
 					exitCode: session.exitCode,
@@ -1300,15 +1386,13 @@ export function registerWorkspaceTerminalRoute({
 				if (record.status === "exited") {
 					return { error: `Terminal session "${terminalId}" has exited.` };
 				}
-				if (!record.originWorkspaceId) {
-					return {
-						error: `Terminal session "${terminalId}" is missing a workspace.`,
-					};
-				}
-				if (requestedWorkspaceId) {
+				// A null originWorkspaceId is legitimate for folder-root / group
+				// sessions; ownership for those is by terminalId alone.
+				const recordWorkspaceId = record.originWorkspaceId ?? undefined;
+				if (requestedWorkspaceId && recordWorkspaceId) {
 					const mismatchError = getTerminalWorkspaceMismatchError({
 						terminalId,
-						ownerWorkspaceId: record.originWorkspaceId,
+						ownerWorkspaceId: recordWorkspaceId,
 						requestedWorkspaceId,
 					});
 					if (mismatchError) return { error: mismatchError };
@@ -1317,10 +1401,12 @@ export function registerWorkspaceTerminalRoute({
 				const themeType = parseThemeType(c.req.query("themeType"));
 
 				// Prefer adoption: if the daemon still owns the PTY across a
-				// host-service restart, we keep the live shell + ring buffer.
+				// host-service restart, we keep the live shell + ring buffer. This
+				// works even for workspace-less group sessions — the live PTY holds
+				// the real cwd/env, so no target is needed.
 				const adopted = await createTerminalSessionInternal({
 					terminalId,
-					workspaceId: record.originWorkspaceId,
+					workspaceId: recordWorkspaceId,
 					themeType,
 					db,
 					eventBus,
@@ -1331,12 +1417,19 @@ export function registerWorkspaceTerminalRoute({
 				if (!("error" in adopted)) return adopted;
 
 				// Active row but daemon no longer owns the PTY (laptop sleep,
-				// daemon restart, machine reboot). Respawn rather than dead-end
-				// the pane — the renderer's xterm scrollback stays painted above.
+				// daemon restart, machine reboot). A workspace session can be
+				// respawned from its worktree; a workspace-less group/folder
+				// session has no recoverable cwd in the DB row (that lives in M7's
+				// durable store), so dead-end it with a clear message instead.
+				if (!recordWorkspaceId) {
+					return {
+						error: `Terminal session "${terminalId}" can no longer be restored; please open a new terminal.`,
+					};
+				}
 				console.log(`[terminal] respawning lost session ${terminalId}`);
 				return createTerminalSessionInternal({
 					terminalId,
-					workspaceId: record.originWorkspaceId,
+					workspaceId: recordWorkspaceId,
 					themeType,
 					db,
 					eventBus,

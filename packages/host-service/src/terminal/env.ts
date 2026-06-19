@@ -116,6 +116,14 @@ export function normalizeUtf8Locale(baseEnv: Record<string, string>): string {
 
 // ── V2 terminal env construction ─────────────────────────────────────
 
+/**
+ * Separator for the `SUPERSET_ROOTS` env var. Newline-separated (not `:`)
+ * because absolute paths may legitimately contain a colon on some platforms,
+ * whereas a newline never appears in a POSIX path component. Consumers split on
+ * `\n`. `SUPERSET_ROOT_PATH` stays single-valued for backward compatibility.
+ */
+export const SUPERSET_ROOTS_SEPARATOR = "\n";
+
 interface BuildV2TerminalEnvParams {
 	baseEnv: Record<string, string>;
 	shell: string;
@@ -126,6 +134,12 @@ interface BuildV2TerminalEnvParams {
 	workspaceId: string;
 	workspacePath: string;
 	rootPath: string;
+	/**
+	 * For group ("multi-root workspace") sessions: every root's absolute path.
+	 * When non-empty, exported as `SUPERSET_ROOTS`. `SUPERSET_ROOT_PATH` stays
+	 * pointed at the (combined agent) `rootPath` for backward compatibility.
+	 */
+	groupRootPaths?: string[];
 	hostServiceVersion: string;
 	supersetEnv: "development" | "production";
 	agentHookPort: string;
@@ -155,6 +169,7 @@ export function buildV2TerminalEnv(
 		workspaceId,
 		workspacePath,
 		rootPath,
+		groupRootPaths,
 		hostServiceVersion,
 		supersetEnv,
 		agentHookPort,
@@ -185,6 +200,12 @@ export function buildV2TerminalEnv(
 	env.SUPERSET_WORKSPACE_ID = workspaceId;
 	env.SUPERSET_WORKSPACE_PATH = workspacePath;
 	env.SUPERSET_ROOT_PATH = rootPath;
+	// Group ("multi-root workspace") sessions also advertise every root path so a
+	// single agent can enumerate them; SUPERSET_ROOT_PATH still points at the
+	// combined agent root for backward compatibility.
+	if (groupRootPaths && groupRootPaths.length > 0) {
+		env.SUPERSET_ROOTS = groupRootPaths.join(SUPERSET_ROOTS_SEPARATOR);
+	}
 	env.SUPERSET_ENV = supersetEnv;
 	env.SUPERSET_AGENT_HOOK_PORT = agentHookPort;
 	env.SUPERSET_AGENT_HOOK_VERSION = agentHookVersion;

@@ -1,4 +1,10 @@
 export {
+	getGroupAgentRootPath,
+	getSupersetHomeDir,
+	type PrepareAgentRootResult,
+	prepareAgentRoot,
+} from "./prepare-agent-root.ts";
+export {
 	WorkspaceGroupResolver,
 	type WorkspaceGroupResolverOptions,
 } from "./resolve.ts";

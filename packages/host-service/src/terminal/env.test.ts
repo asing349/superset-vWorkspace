@@ -464,6 +464,31 @@ describe("buildV2TerminalEnv", () => {
 		expect(env.COLORFGBG).toBe("15;0");
 	});
 
+	test("omits SUPERSET_ROOTS for a single-workspace session", () => {
+		const env = buildV2TerminalEnv(baseParams);
+		expect(env.SUPERSET_ROOTS).toBeUndefined();
+		// SUPERSET_ROOT_PATH stays the single root for backward compatibility.
+		expect(env.SUPERSET_ROOT_PATH).toBe("/tmp/repo");
+	});
+
+	test("exports newline-separated SUPERSET_ROOTS for a group session", () => {
+		const env = buildV2TerminalEnv({
+			...baseParams,
+			// Combined agent root as the cwd / SUPERSET_ROOT_PATH …
+			cwd: "/tmp/group-roots/g1",
+			rootPath: "/tmp/group-roots/g1",
+			// … while SUPERSET_ROOTS lists every real root.
+			groupRootPaths: ["/tmp/repo-a", "/tmp/repo-b"],
+		});
+		expect(env.SUPERSET_ROOTS).toBe("/tmp/repo-a\n/tmp/repo-b");
+		expect(env.SUPERSET_ROOT_PATH).toBe("/tmp/group-roots/g1");
+	});
+
+	test("omits SUPERSET_ROOTS when groupRootPaths is empty", () => {
+		const env = buildV2TerminalEnv({ ...baseParams, groupRootPaths: [] });
+		expect(env.SUPERSET_ROOTS).toBeUndefined();
+	});
+
 	test("sets COLORFGBG to light mode when themeType is light", () => {
 		const env = buildV2TerminalEnv({
 			...baseParams,

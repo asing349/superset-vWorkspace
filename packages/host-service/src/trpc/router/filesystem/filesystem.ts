@@ -420,6 +420,17 @@ export const filesystemRouter = router({
 			return await service.copyPath(serviceInput);
 		}),
 
+	/**
+	 * File-name search. Accepts three addressing forms (additive — the first two
+	 * are the original contract; the third was added for cross-root search):
+	 * - `{ workspaceId }`        — a single workspace's worktree.
+	 * - `{ projectId }`          — a project's repo (degrades to `{ matches: [] }`
+	 *                              when the repo isn't cloned on this host).
+	 * - `{ groupId, rootId }`    — one root of a multi-root workspace ("group"),
+	 *                              including `kind: "folder"` roots with no
+	 *                              workspaceId. The renderer fans out one call per
+	 *                              root and merges; this procedure stays single-root.
+	 */
 	searchFiles: queryProcedure
 		.meta({ timeoutMs: 30_000 })
 		.input(
@@ -427,16 +438,24 @@ export const filesystemRouter = router({
 				.object({
 					workspaceId: z.string().optional(),
 					projectId: z.string().optional(),
+					groupId: z.string().optional(),
+					rootId: z.string().optional(),
 					query: z.string(),
 					includeHidden: z.boolean().optional(),
 					includePattern: z.string().optional(),
 					excludePattern: z.string().optional(),
 					limit: z.number().optional(),
 				})
-				.refine(
-					(v) => !!v.workspaceId !== !!v.projectId,
-					"Exactly one of workspaceId or projectId must be provided",
-				),
+				.refine((v) => {
+					const hasGroupRoot = !!v.groupId && !!v.rootId;
+					// `groupId`/`rootId` must be supplied together.
+					if (!!v.groupId !== !!v.rootId) return false;
+					// Exactly one addressing form among workspace / project / group-root.
+					const forms = [!!v.workspaceId, !!v.projectId, hasGroupRoot].filter(
+						Boolean,
+					);
+					return forms.length === 1;
+				}, "Provide exactly one addressing: { workspaceId }, { projectId }, or { groupId, rootId }"),
 		)
 		.query(async ({ ctx, input }) => {
 			const trimmedQuery = input.query.trim();
@@ -444,10 +463,16 @@ export const filesystemRouter = router({
 				return { matches: [] };
 			}
 
-			const { workspaceId, projectId, ...serviceInput } = input;
-			const service = workspaceId
-				? getFilesystemService(ctx, workspaceId)
-				: getProjectFilesystemService(ctx, projectId as string);
+			const { workspaceId, projectId, groupId, rootId, ...serviceInput } =
+				input;
+			let service: ReturnType<typeof getFilesystemService> | null;
+			if (groupId && rootId) {
+				service = getRootIdFilesystemService(ctx, { groupId, rootId });
+			} else if (workspaceId) {
+				service = getFilesystemService(ctx, workspaceId);
+			} else {
+				service = getProjectFilesystemService(ctx, projectId as string);
+			}
 			if (!service) {
 				return { matches: [] };
 			}
@@ -458,17 +483,24 @@ export const filesystemRouter = router({
 			});
 		}),
 
+	/**
+	 * File-content search. Accepts EITHER `{ workspaceId }` (original) OR
+	 * `{ groupId, rootId }` (added for cross-root search, including folder roots).
+	 * The renderer fans out per root and merges; this procedure stays single-root.
+	 */
 	searchContent: queryProcedure
 		.meta({ timeoutMs: 60_000 })
 		.input(
-			z.object({
-				workspaceId: z.string(),
-				query: z.string(),
-				includeHidden: z.boolean().optional(),
-				includePattern: z.string().optional(),
-				excludePattern: z.string().optional(),
-				limit: z.number().optional(),
-			}),
+			z.intersection(
+				readAddressingSchema,
+				z.object({
+					query: z.string(),
+					includeHidden: z.boolean().optional(),
+					includePattern: z.string().optional(),
+					excludePattern: z.string().optional(),
+					limit: z.number().optional(),
+				}),
+			),
 		)
 		.query(async ({ ctx, input }) => {
 			const trimmedQuery = input.query.trim();
@@ -476,8 +508,7 @@ export const filesystemRouter = router({
 				return { matches: [] };
 			}
 
-			const { workspaceId, ...serviceInput } = input;
-			const service = getFilesystemService(ctx, workspaceId);
+			const { service, serviceInput } = resolveReadServiceInput(ctx, input);
 			return await service.searchContent({
 				...serviceInput,
 				query: trimmedQuery,
