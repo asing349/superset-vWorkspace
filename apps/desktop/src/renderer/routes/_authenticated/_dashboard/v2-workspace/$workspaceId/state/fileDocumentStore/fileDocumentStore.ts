@@ -11,10 +11,28 @@ import type {
 
 type WorkspaceTrpcClient = ReturnType<typeof workspaceTrpc.createClient>;
 
+/**
+ * Multi-root workspace ("group") addressing for filesystem reads. When set, the
+ * read-only `filesystem.*` queries (`readFile`) use the `{ groupId, rootId }`
+ * form added by the host in M1, routing to the correct root's FS service.
+ * When unset (single-workspace shell), reads use the `{ workspaceId }` form —
+ * byte-for-byte identical to the prior behavior.
+ */
+export interface FileDocumentGroupAddressing {
+	groupId: string;
+	rootId: string;
+}
+
 interface DocumentEntry {
 	id: string;
 	workspaceId: string;
 	absolutePath: string;
+	/**
+	 * Optional group addressing for read routing. Writes remain `workspaceId`-only
+	 * (the host contract keeps write/move/delete workspaceId-addressed for now),
+	 * so `kind: "workspace"` group roots save against their real `workspaceId`.
+	 */
+	groupAddressing: FileDocumentGroupAddressing | null;
 	trpcClient: WorkspaceTrpcClient;
 	content: ContentState;
 	savedContentText: string | null;
@@ -86,6 +104,18 @@ function toBytes(value: string | Uint8Array): Uint8Array {
 	return typeof value === "string" ? decodeBase64(value) : value;
 }
 
+/**
+ * Build the read addressing for a document. Returns the `{ groupId, rootId }`
+ * form when the entry carries group addressing, otherwise the `{ workspaceId }`
+ * form. The host's read-only procedures (`readFile`) accept either via a union,
+ * so both forms type-check against the same query input.
+ */
+function readAddressing(
+	entry: DocumentEntry,
+): { workspaceId: string } | FileDocumentGroupAddressing {
+	return entry.groupAddressing ?? { workspaceId: entry.workspaceId };
+}
+
 async function loadEntry(
 	entry: DocumentEntry,
 	options: { unlimited?: boolean } = {},
@@ -95,7 +125,7 @@ async function loadEntry(
 	const maxBytes = options.unlimited ? undefined : DEFAULT_MAX_BYTES;
 	try {
 		const result = await client.filesystem.readFile.query({
-			workspaceId: entry.workspaceId,
+			...readAddressing(entry),
 			absolutePath: entry.absolutePath,
 			encoding: readAsBinary ? undefined : "utf-8",
 			maxBytes,
@@ -157,7 +187,7 @@ async function fetchCurrentDiskContent(
 	const client = entry.trpcClient;
 	try {
 		const result = await client.filesystem.readFile.query({
-			workspaceId: entry.workspaceId,
+			...readAddressing(entry),
 			absolutePath: entry.absolutePath,
 			encoding: "utf-8",
 			maxBytes: DEFAULT_MAX_BYTES,
@@ -318,6 +348,7 @@ export function acquireDocument(
 	workspaceId: string,
 	absolutePath: string,
 	trpcClient: WorkspaceTrpcClient,
+	groupAddressing: FileDocumentGroupAddressing | null = null,
 ): SharedFileDocument {
 	const k = key(workspaceId, absolutePath);
 	let entry = entries.get(k);
@@ -326,6 +357,7 @@ export function acquireDocument(
 			id: crypto.randomUUID(),
 			workspaceId,
 			absolutePath,
+			groupAddressing,
 			trpcClient,
 			content: { kind: "loading" },
 			savedContentText: null,

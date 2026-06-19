@@ -29,8 +29,16 @@ export function useWorkspaceFileNavigation({
 	setRightSidebarOpen: V2UserPreferencesApi["setRightSidebarOpen"];
 	setRightSidebarTab: V2UserPreferencesApi["setRightSidebarTab"];
 }): {
-	openFilePane: (filePath: string, openInNewTab?: boolean) => void;
-	openFilePaneFromTreeClick: (filePath: string, openInNewTab?: boolean) => void;
+	openFilePane: (
+		filePath: string,
+		openInNewTab?: boolean,
+		rootId?: string,
+	) => void;
+	openFilePaneFromTreeClick: (
+		filePath: string,
+		openInNewTab?: boolean,
+		rootId?: string,
+	) => void;
 	revealPath: (
 		path: string,
 		options?: {
@@ -92,7 +100,7 @@ export function useWorkspaceFileNavigation({
 	);
 
 	const openFilePane = useCallback(
-		(filePath: string, openInNewTab?: boolean) => {
+		(filePath: string, openInNewTab?: boolean, rootId?: string) => {
 			const absoluteFilePath = worktreePath
 				? toAbsoluteWorkspacePath(worktreePath, filePath)
 				: filePath;
@@ -105,16 +113,22 @@ export function useWorkspaceFileNavigation({
 					recordView({ relativePath, absolutePath: absoluteFilePath });
 				}
 			}
+			// Build the pane data once so the new-tab / split paths stay identical
+			// except for the optional `rootId` carried for group FS routing. When
+			// `rootId` is undefined the spread adds nothing — the single-workspace
+			// shape is byte-for-byte the prior `{ filePath, mode }`.
+			const fileData: FilePaneData = {
+				filePath: absoluteFilePath,
+				mode: "editor",
+				...(rootId !== undefined ? { rootId } : {}),
+			};
 			const state = store.getState();
 			if (openInNewTab) {
 				state.addTab({
 					panes: [
 						{
 							kind: "file",
-							data: {
-								filePath: absoluteFilePath,
-								mode: "editor",
-							} as FilePaneData,
+							data: fileData as FilePaneData,
 						},
 					],
 				});
@@ -126,11 +140,17 @@ export function useWorkspaceFileNavigation({
 			// flow: once pinned, the next pick couldn't find an unpinned pane
 			// to replace and got split into a new pane. Pinning is now
 			// explicit only (header click, dirty edit).
+			//
+			// De-dup/focus matches on absolute `filePath` (globally unambiguous),
+			// and additionally on `rootId` so a group can hold the same path from
+			// two roots in distinct panes. When both sides have `rootId` unset
+			// (single-workspace) this is identical to the prior filePath-only match.
 			for (const tab of state.tabs) {
 				for (const pane of Object.values(tab.panes)) {
 					if (
 						pane.kind === "file" &&
-						(pane.data as FilePaneData).filePath === absoluteFilePath
+						(pane.data as FilePaneData).filePath === absoluteFilePath &&
+						(pane.data as FilePaneData).rootId === rootId
 					) {
 						state.setActiveTab(tab.id);
 						state.setActivePane({ tabId: tab.id, paneId: pane.id });
@@ -141,10 +161,7 @@ export function useWorkspaceFileNavigation({
 			state.openPane({
 				pane: {
 					kind: "file",
-					data: {
-						filePath: absoluteFilePath,
-						mode: "editor",
-					} as FilePaneData,
+					data: fileData as FilePaneData,
 				},
 			});
 		},
@@ -155,9 +172,9 @@ export function useWorkspaceFileNavigation({
 	// to pin it" pattern on top of openFilePane. The picker and other callers
 	// stay on plain openFilePane so re-picks just refocus without pinning.
 	const openFilePaneFromTreeClick = useCallback(
-		(filePath: string, openInNewTab?: boolean) => {
+		(filePath: string, openInNewTab?: boolean, rootId?: string) => {
 			if (openInNewTab) {
-				openFilePane(filePath, true);
+				openFilePane(filePath, true, rootId);
 				return;
 			}
 			const absoluteFilePath = worktreePath
@@ -167,12 +184,13 @@ export function useWorkspaceFileNavigation({
 			const active = state.getActivePane();
 			if (
 				active?.pane.kind === "file" &&
-				(active.pane.data as FilePaneData).filePath === absoluteFilePath
+				(active.pane.data as FilePaneData).filePath === absoluteFilePath &&
+				(active.pane.data as FilePaneData).rootId === rootId
 			) {
 				state.setPanePinned({ paneId: active.pane.id, pinned: true });
 				return;
 			}
-			openFilePane(filePath);
+			openFilePane(filePath, false, rootId);
 		},
 		[openFilePane, store, worktreePath],
 	);

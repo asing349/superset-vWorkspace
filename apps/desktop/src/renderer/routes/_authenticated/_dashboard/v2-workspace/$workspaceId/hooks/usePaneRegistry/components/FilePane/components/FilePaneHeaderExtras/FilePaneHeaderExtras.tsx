@@ -13,20 +13,32 @@ import { FileViewToggle } from "../FileViewToggle";
 interface FilePaneHeaderExtrasProps {
 	context: RendererContext<PaneViewerData>;
 	workspaceId: string;
+	/**
+	 * Multi-root workspace ("group") id, threaded by the M3 group shell. With the
+	 * pane's `rootId` it routes the shared-document read via `{ groupId, rootId }`
+	 * so this view-resolution document hits the same cache entry as `FilePane`.
+	 * Undefined in the single-workspace shell → `{ workspaceId }` reads unchanged.
+	 */
+	groupId?: string;
 }
 
 export function FilePaneHeaderExtras({
 	context,
 	workspaceId,
+	groupId,
 }: FilePaneHeaderExtrasProps) {
 	const data = context.pane.data as FilePaneData;
-	const { filePath } = data;
+	const { filePath, rootId } = data;
 	const openInExternalEditor = useOpenInExternalEditor(workspaceId);
 	const { copyToClipboard, copied } = useCopyToClipboard();
+
+	const groupAddressing =
+		groupId !== undefined && rootId !== undefined ? { groupId, rootId } : null;
 
 	const document = useSharedFileDocument({
 		workspaceId,
 		absolutePath: filePath,
+		groupAddressing,
 	});
 
 	const handleChangeView = useCallback(

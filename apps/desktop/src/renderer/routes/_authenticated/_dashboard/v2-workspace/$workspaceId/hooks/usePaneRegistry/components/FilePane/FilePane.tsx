@@ -13,15 +13,29 @@ import { resolveActivePaneView } from "./registry";
 interface FilePaneProps {
 	context: RendererContext<PaneViewerData>;
 	workspaceId: string;
+	/**
+	 * Multi-root workspace ("group") id. Set only by the group shell (M3). When
+	 * present alongside the pane's `rootId`, file reads route via the
+	 * `{ groupId, rootId }` addressing. Undefined in the single-workspace shell,
+	 * where reads use `{ workspaceId }` unchanged.
+	 */
+	groupId?: string;
 }
 
-export function FilePane({ context, workspaceId }: FilePaneProps) {
+export function FilePane({ context, workspaceId, groupId }: FilePaneProps) {
 	const data = context.pane.data as FilePaneData;
-	const { filePath } = data;
+	const { filePath, rootId } = data;
+
+	// Group addressing only when both the group id (threaded by the M3 group
+	// shell) and the pane's root id are present; otherwise null → single-workspace
+	// `{ workspaceId }` reads, byte-for-byte unchanged.
+	const groupAddressing =
+		groupId !== undefined && rootId !== undefined ? { groupId, rootId } : null;
 
 	const document = useSharedFileDocument({
 		workspaceId,
 		absolutePath: filePath,
+		groupAddressing,
 	});
 
 	// Follow the underlying file if it's renamed on disk — the store migrates

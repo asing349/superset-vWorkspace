@@ -4,10 +4,26 @@ export interface FilePaneData {
 	language?: string;
 	viewId?: string;
 	forceViewId?: string;
+	/**
+	 * Multi-root workspace ("group") addressing. Identifies which root of the
+	 * group this file belongs to. Optional: when unset, the pane belongs to the
+	 * route's single workspace and filesystem calls use the `{ workspaceId }`
+	 * addressing (unchanged single-workspace behavior). In the group shell (M3)
+	 * it is always set, and filesystem reads/writes route via the root's FS
+	 * service using the `{ groupId, rootId }` addressing.
+	 */
+	rootId?: string;
 }
 
 export interface TerminalPaneData {
 	terminalId: string;
+	/**
+	 * Multi-root workspace ("group") addressing — the root this terminal targets.
+	 * Optional: unset for single-workspace terminals (the route's workspace).
+	 * In the group shell a terminal is created against a specific root's
+	 * worktree/folder; M6 wires per-root terminal creation through this.
+	 */
+	rootId?: string;
 }
 
 export interface ChatPaneData {
@@ -50,6 +66,14 @@ export interface DiffPaneData {
 	focusLine?: number;
 	focusSide?: DiffFocusSide;
 	focusTick?: number;
+	/**
+	 * Multi-root workspace ("group") addressing — the root whose git changeset
+	 * this diff renders. Optional: unset for single-workspace diffs (the route's
+	 * workspace). In the group shell the Changes view sets this to the
+	 * `kind: "workspace"` root's `rootId`; git reads still route by that root's
+	 * `workspaceId`. Folder roots that are not git repos have no diff pane.
+	 */
+	rootId?: string;
 }
 
 export interface CommentPaneData {

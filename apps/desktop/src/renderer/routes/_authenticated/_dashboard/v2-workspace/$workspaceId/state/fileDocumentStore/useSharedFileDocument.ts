@@ -1,16 +1,27 @@
 import { useWorkspaceClient } from "@superset/workspace-client";
 import { useEffect, useState, useSyncExternalStore } from "react";
-import { acquireDocument, releaseDocument } from "./fileDocumentStore";
+import {
+	acquireDocument,
+	type FileDocumentGroupAddressing,
+	releaseDocument,
+} from "./fileDocumentStore";
 import type { SharedFileDocument } from "./types";
 
 interface UseSharedFileDocumentParams {
 	workspaceId: string;
 	absolutePath: string;
+	/**
+	 * Optional multi-root workspace ("group") addressing. When provided, file
+	 * reads route to the root's FS service via `{ groupId, rootId }`. When
+	 * omitted (single-workspace shell), reads use `{ workspaceId }` unchanged.
+	 */
+	groupAddressing?: FileDocumentGroupAddressing | null;
 }
 
 export function useSharedFileDocument({
 	workspaceId,
 	absolutePath,
+	groupAddressing = null,
 }: UseSharedFileDocumentParams): SharedFileDocument {
 	const { trpcClient } = useWorkspaceClient();
 
@@ -19,7 +30,12 @@ export function useSharedFileDocument({
 		workspaceId: string;
 		absolutePath: string;
 	}>(() => ({
-		handle: acquireDocument(workspaceId, absolutePath, trpcClient),
+		handle: acquireDocument(
+			workspaceId,
+			absolutePath,
+			trpcClient,
+			groupAddressing,
+		),
 		workspaceId,
 		absolutePath,
 	}));
@@ -42,7 +58,7 @@ export function useSharedFileDocument({
 			state.handle.absolutePath === absolutePath;
 		const handle = handleAlreadyPointsAtNewPath
 			? state.handle
-			: acquireDocument(workspaceId, absolutePath, trpcClient);
+			: acquireDocument(workspaceId, absolutePath, trpcClient, groupAddressing);
 		setState({ handle, workspaceId, absolutePath });
 	}
 

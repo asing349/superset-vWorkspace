@@ -2,6 +2,7 @@ export { FileDocumentStoreProvider } from "./FileDocumentStoreProvider";
 export {
 	acquireDocument,
 	dispatchFsEvent,
+	type FileDocumentGroupAddressing,
 	getDocument,
 	releaseDocument,
 } from "./fileDocumentStore";

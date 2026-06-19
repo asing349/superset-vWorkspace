@@ -31,6 +31,7 @@ import {
 import type { StoreApi } from "zustand/vanilla";
 import { V2NotificationStatusIndicator } from "../../components/V2NotificationStatusIndicator";
 import {
+	type FileDocumentGroupAddressing,
 	getDocument,
 	useSharedFileDocument,
 } from "../../state/fileDocumentStore";
@@ -67,15 +68,18 @@ function FilePaneTabTitle({
 	isActive,
 	pinned,
 	workspaceId,
+	groupAddressing,
 }: {
 	filePath: string;
 	isActive: boolean;
 	pinned: boolean;
 	workspaceId: string;
+	groupAddressing: FileDocumentGroupAddressing | null;
 }) {
 	const document = useSharedFileDocument({
 		workspaceId,
 		absolutePath: filePath,
+		groupAddressing,
 	});
 	const name = getFileName(filePath);
 	return (
@@ -102,10 +106,17 @@ const MOD_KEY = navigator.platform.toLowerCase().includes("mac")
 	: "Ctrl+";
 
 interface UsePaneRegistryOptions {
-	onOpenFile: (path: string, openInNewTab?: boolean) => void;
+	onOpenFile: (path: string, openInNewTab?: boolean, rootId?: string) => void;
 	onRevealPath: (path: string) => void;
 	launcher: TerminalLauncher;
 	store: StoreApi<WorkspaceStore<PaneViewerData>>;
+	/**
+	 * Multi-root workspace ("group") id. Set only by the M3 group shell; when
+	 * present, file panes carrying a `rootId` route filesystem reads via the
+	 * `{ groupId, rootId }` addressing. Undefined in the single-workspace shell,
+	 * where reads use `{ workspaceId }` unchanged.
+	 */
+	groupId?: string;
 }
 
 export function usePaneRegistry({
@@ -113,6 +124,7 @@ export function usePaneRegistry({
 	onRevealPath,
 	launcher,
 	store,
+	groupId,
 }: UsePaneRegistryOptions): PaneRegistry<PaneViewerData> {
 	const { workspace } = useWorkspace();
 	const workspaceId = workspace.id;
@@ -215,20 +227,29 @@ export function usePaneRegistry({
 				getTitle: (pane) => getFileName((pane.data as FilePaneData).filePath),
 				renderTitle: (ctx: RendererContext<PaneViewerData>) => {
 					const data = ctx.pane.data as FilePaneData;
+					const groupAddressing: FileDocumentGroupAddressing | null =
+						groupId !== undefined && data.rootId !== undefined
+							? { groupId, rootId: data.rootId }
+							: null;
 					return (
 						<FilePaneTabTitle
 							filePath={data.filePath}
 							isActive={ctx.isActive}
 							pinned={Boolean(ctx.pane.pinned)}
 							workspaceId={workspaceId}
+							groupAddressing={groupAddressing}
 						/>
 					);
 				},
 				renderPane: (ctx: RendererContext<PaneViewerData>) => (
-					<FilePane context={ctx} workspaceId={workspaceId} />
+					<FilePane context={ctx} workspaceId={workspaceId} groupId={groupId} />
 				),
 				renderHeaderExtras: (ctx: RendererContext<PaneViewerData>) => (
-					<FilePaneHeaderExtras context={ctx} workspaceId={workspaceId} />
+					<FilePaneHeaderExtras
+						context={ctx}
+						workspaceId={workspaceId}
+						groupId={groupId}
+					/>
 				),
 				onHeaderClick: (ctx: RendererContext<PaneViewerData>) =>
 					ctx.actions.pin(),
@@ -551,6 +572,7 @@ export function usePaneRegistry({
 		}),
 		[
 			workspaceId,
+			groupId,
 			clearWorkspaceRunTerminal,
 			clearShortcut,
 			scrollToBottomShortcut,
