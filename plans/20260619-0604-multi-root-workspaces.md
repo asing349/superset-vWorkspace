@@ -63,7 +63,7 @@ These assumptions unblock planning. Each must be confirmed (moved to the Decisio
 ## Progress
 
 - [x] (2026-06-19) M1 — host-service `workspaceGroup` router + in-memory store + `rootId` FS resolution (no SQLite). 9 procedures on `appRouter.workspaceGroup`; `WorkspaceGroupResolver` resolves roots (+`exists`); `getServiceForRootId` added. Committed `61cb589b6` — host tests 703 pass / 0 fail (+8 new), typecheck 28/28, lint clean.
-- [ ] M2 — `rootId` discriminator on pane data; route filesystem/git calls by root.
+- [x] (2026-06-19) M2 — `rootId` discriminator on pane data; route filesystem/git calls by root. Optional `rootId?` on FilePaneData/TerminalPaneData/DiffPaneData; reads route via `{groupId,rootId}` when set, else `{workspaceId}` (single-workspace unchanged); git stays `workspaceId`-keyed (no change needed). Committed `7857b249f` — typecheck 28/28, lint clean.
 - [ ] M3 — `v2-group/$groupId` route, `WorkspaceGroupProvider`, group-scoped pane store + renderer-local layout persistence.
 - [ ] M4 — multi-root Files explorer (N trees) + multi-root Changes/git sections.
 - [ ] M5 — sidebar switcher entry + create/add-folder/remove/reorder/set-default management UI.
@@ -92,7 +92,15 @@ Use timestamps (e.g. `- [x] (2026-06-19 06:30Z) ...`) when checking items off, t
 
 - (M1) `noNonNullAssertion` is **on** for host-service (only `packages/cli`/`cli-framework` override it off). New code uses explicit guards, not `!`.
 
-- (M1, env) `bun run lint` prints `rg: command not found` from an unrelated `check-git-ref-strings.sh` step; the script still exits 0 and Biome reports clean. Pre-existing on this machine (ripgrep not installed); not introduced by this work.
+- (M1, env) `bun run lint` prints `rg: command not found` from an unrelated `check-git-ref-strings.sh` step; the script still exits 0 and Biome reports clean. Pre-existing on this machine (ripgrep not installed); not introduced by this work. NOTE: we deliberately did NOT install ripgrep — turning on that dormant sub-check could fail on pre-existing code and break the `bun run lint` gate mid-stream.
+
+- (M2) **`lint:check-node-imports` does NOT exist in this repo** (absent from both the root and `apps/desktop` package.json). The plan's "run `bun run lint:check-node-imports`" instruction is stale for this checkout. The renderer-no-Node-imports rule is enforced by inspection instead: edited renderer files were grepped for `node:*`/`fs`/`path`/`os`/`child_process`/`crypto` imports and `require(` — zero matches.
+
+- (M2) **`searchFiles`/`searchContent` were NOT extended to `{groupId,rootId}` in M1** — only `listDirectory`/`readFile`/`getMetadata` got the additive union. The Files explorer (M4) uses `listDirectory` via `useFileTree`, so it is unblocked; but cross-root quick-open/search (Q4 fan-out) needs a host follow-up to make `searchFiles` group-addressable. Quick-open search lives in `useV2FileSearch` under `apps/desktop/.../screens/main/components/CommandPalette/hooks/` (outside the `v2-workspace/$workspaceId` tree). Tracked as a separate host task; cross-root search is a Q4 nicety, not in the Validation acceptance list.
+
+- (M2) The real filesystem read/write engine is `v2-workspace/$workspaceId/state/fileDocumentStore/fileDocumentStore.ts` via `useSharedFileDocument`, consumed by `FilePane` + `FilePaneTabTitle` + `FilePaneHeaderExtras` for the same document key (addressing threaded through all three). **Writes stay `workspaceId`-only** (matching the M1 contract). Folder roots have no `workspaceId`: reads route via `{groupId,rootId}`, but writes are not yet supported — M3/M4 must gate save for folder roots accordingly.
+
+- (M2) There is **no per-pane in-editor git gutter/blame**. Git status is consumed at the shell/sidebar/diff level via `useGitStatus({ workspaceId, … })` (`hooks/host-service/useGitStatus/`), already keyed by `workspaceId`. So M2's git-routing requirement needed no code change; M4 instantiates that query per `kind:"workspace"` root and skips folder roots.
 
 
 ## Decision Log
