@@ -7,13 +7,26 @@ import {
 } from "@superset/ui/dropdown-menu";
 import { BsTerminalPlus } from "react-icons/bs";
 import { LuFolderGit2, LuLayers } from "react-icons/lu";
+import type { ResolvedGroupRoot } from "../../providers/WorkspaceGroupProvider";
 import { useWorkspaceGroup } from "../../providers/WorkspaceGroupProvider";
+import { CombinedAgentRootsHint } from "../CombinedAgentRootsHint";
 
 interface GroupAddTabMenuProps {
 	/** Open a terminal targeting the given root (cwd = that root). */
 	onAddRootTerminal: (rootId: string) => void;
 	/** Launch the combined agent terminal (cwd = synthetic agent root). */
 	onLaunchAgent: () => void;
+	/**
+	 * The roots the combined agent will see (exists-only, matching
+	 * `prepareAgentRoot`). Drives the "N roots visible to the combined agent"
+	 * hint shown beneath the launch action.
+	 */
+	agentVisibleRoots: ResolvedGroupRoot[];
+	/**
+	 * True when a combined agent is already running and the root set changed since
+	 * it launched — surfaces a "relaunch to include new roots" nudge.
+	 */
+	agentRootsChangedSinceLaunch: boolean;
 }
 
 /**
@@ -35,6 +48,8 @@ interface GroupAddTabMenuProps {
 export function GroupAddTabMenu({
 	onAddRootTerminal,
 	onLaunchAgent,
+	agentVisibleRoots,
+	agentRootsChangedSinceLaunch,
 }: GroupAddTabMenuProps) {
 	const { roots, defaultRoot } = useWorkspaceGroup();
 
@@ -89,6 +104,15 @@ export function GroupAddTabMenu({
 				<LuLayers className="size-4" />
 				<span>Launch combined agent</span>
 			</DropdownMenuItem>
+
+			{/* Non-interactive scope hint for the combined agent. Count + labels are
+			    exists-only, matching what prepareAgentRoot symlinks. */}
+			<div className="px-2 pt-1 pb-1.5">
+				<CombinedAgentRootsHint
+					visibleRoots={agentVisibleRoots}
+					rootsChangedSinceLaunch={agentRootsChangedSinceLaunch}
+				/>
+			</div>
 		</>
 	);
 }

@@ -88,11 +88,15 @@ export function useGroupTerminalLauncher(): GroupTerminalLauncher {
 	const createAgentRoot = useCallback(
 		async (options?: CreateRootOptions): Promise<string> => {
 			const terminalId = options?.terminalId ?? crypto.randomUUID();
-			// Idempotently (re)build the synthetic parent dir of symlinks before the
-			// PTY spawns. The host's createSession with `agentRoot: true` also calls
-			// prepareAgentRoot internally, but calling it here first keeps the
-			// launch contract explicit (and lets a future UI surface the resolved
-			// agentRootPath without spawning a terminal).
+			// Wave-2 M5: EVERY combined-agent launch re-runs prepareAgentRoot — there
+			// is no cache or skip here, so the synthetic symlink dir is always
+			// reconciled to the CURRENT roots before the PTY spawns (add/remove/
+			// promote since the last launch is picked up). prepareAgentRoot is
+			// idempotent and serialized per-group on the host (Wave-2 M2), so the
+			// deliberate double-invoke (here + createSession's internal call with
+			// `agentRoot: true`) is safe. Calling it explicitly here also lets a
+			// future UI surface the resolved agentRootPath without spawning a
+			// terminal.
 			await trpcClient.workspaceGroup.prepareAgentRoot.mutate({ groupId });
 			await trpcClient.terminal.createSession.mutate({
 				terminalId,

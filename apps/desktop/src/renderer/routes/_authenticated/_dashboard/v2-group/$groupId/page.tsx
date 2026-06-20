@@ -10,11 +10,13 @@ import type {
 	FilePaneData,
 	PaneViewerData,
 } from "../../v2-workspace/$workspaceId/types";
+import { CombinedAgentRootsHint } from "./components/CombinedAgentRootsHint";
 import { GroupAddTabMenu } from "./components/GroupAddTabMenu";
 import { GroupEmptyState } from "./components/GroupEmptyState";
 import { GroupManageButton } from "./components/GroupManageButton";
 import { GroupQuickOpen } from "./components/GroupQuickOpen";
 import { GroupSidebar } from "./components/GroupSidebar";
+import { useCombinedAgentRoots } from "./hooks/useCombinedAgentRoots";
 import { useGroupFileNavigation } from "./hooks/useGroupFileNavigation";
 import { useGroupPaneLayout } from "./hooks/useGroupPaneLayout";
 import { useGroupPaneRegistry } from "./hooks/useGroupPaneRegistry";
@@ -35,6 +37,13 @@ function V2GroupPage() {
 	const { openRootTerminal, openAgentTerminal } = useGroupTerminalOpeners({
 		store,
 	});
+	// M5: the roots the combined agent will see (exists-only, matching
+	// prepareAgentRoot) + whether a running agent's view is stale vs current roots.
+	const {
+		visibleRoots: agentVisibleRoots,
+		rootsChangedSinceLaunch: agentRootsChangedSinceLaunch,
+		recordLaunchSignature,
+	} = useCombinedAgentRoots({ store });
 	const [sidebarWidth, setSidebarWidth] = useState(300);
 	const [isSidebarResizing, setIsSidebarResizing] = useState(false);
 	const [quickOpenOpen, setQuickOpenOpen] = useState(false);
@@ -72,8 +81,12 @@ function V2GroupPage() {
 		[openRootTerminal],
 	);
 	const handleLaunchAgent = useCallback(() => {
+		// openAgentTerminal always re-runs prepareAgentRoot (idempotent) so the
+		// just-launched agent reflects the current roots; record that root set as
+		// the baseline so the "changed since launch" nudge starts fresh.
 		void openAgentTerminal();
-	}, [openAgentTerminal]);
+		recordLaunchSignature();
+	}, [openAgentTerminal, recordLaunchSignature]);
 	const handleOpenDefaultTerminal = useCallback(() => {
 		if (defaultRoot) void openRootTerminal(defaultRoot.rootId);
 	}, [defaultRoot, openRootTerminal]);
@@ -136,6 +149,8 @@ function V2GroupPage() {
 							<GroupAddTabMenu
 								onAddRootTerminal={handleAddRootTerminal}
 								onLaunchAgent={handleLaunchAgent}
+								agentVisibleRoots={agentVisibleRoots}
+								agentRootsChangedSinceLaunch={agentRootsChangedSinceLaunch}
 							/>
 						)}
 						renderEmptyState={() => (
@@ -165,6 +180,11 @@ function V2GroupPage() {
 										Launch combined agent
 									</Button>
 								</div>
+								<CombinedAgentRootsHint
+									visibleRoots={agentVisibleRoots}
+									rootsChangedSinceLaunch={agentRootsChangedSinceLaunch}
+									className="items-center text-center"
+								/>
 							</div>
 						)}
 					/>
