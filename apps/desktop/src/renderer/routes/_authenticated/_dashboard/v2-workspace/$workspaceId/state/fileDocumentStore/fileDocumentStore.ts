@@ -53,8 +53,41 @@ const BINARY_CHECK_SIZE = 8192;
 
 const entries = new Map<string, DocumentEntry>();
 
-function key(workspaceId: string, absolutePath: string): string {
-	return `${workspaceId}:${absolutePath}`;
+/**
+ * Stable addressing discriminator for the document cache key. A document's
+ * identity is `(addressing, absolutePath)`, NOT `(workspaceId, absolutePath)`:
+ * the same absolute path opened in a single-workspace surface and inside a
+ * group (or in two different groups) must resolve to DISTINCT cache entries so
+ * a doc acquired with `{ workspaceId }` addressing is never silently reused for
+ * a `{ groupId, rootId }` context (or vice versa) — which would route its
+ * reads/writes through the wrong root's FS service.
+ *
+ * The discriminator is derived from the SAME `groupAddressing ?? { workspaceId }`
+ * choice that `readAddressing()`/`writeAddressing()` make, so the cache key, the
+ * read addressing, and the write addressing are always mutually consistent:
+ *   - single-workspace / workspace root (`groupAddressing === null`) → `ws:${workspaceId}`
+ *   - group / folder root (`groupAddressing` set)                    → `group:${groupId}:${rootId}`
+ */
+export function documentAddressingKey(
+	workspaceId: string,
+	groupAddressing: FileDocumentGroupAddressing | null,
+): string {
+	return groupAddressing
+		? `group:${groupAddressing.groupId}:${groupAddressing.rootId}`
+		: `ws:${workspaceId}`;
+}
+
+function key(
+	workspaceId: string,
+	absolutePath: string,
+	groupAddressing: FileDocumentGroupAddressing | null,
+): string {
+	return `${documentAddressingKey(workspaceId, groupAddressing)}:${absolutePath}`;
+}
+
+/** Build the cache key for an existing entry from its stored addressing. */
+function keyForEntry(entry: DocumentEntry): string {
+	return key(entry.workspaceId, entry.absolutePath, entry.groupAddressing);
 }
 
 function notify(entry: DocumentEntry): void {
@@ -370,7 +403,7 @@ export function acquireDocument(
 	trpcClient: WorkspaceTrpcClient,
 	groupAddressing: FileDocumentGroupAddressing | null = null,
 ): SharedFileDocument {
-	const k = key(workspaceId, absolutePath);
+	const k = key(workspaceId, absolutePath, groupAddressing);
 	let entry = entries.get(k);
 	if (!entry) {
 		entry = {
@@ -402,8 +435,9 @@ export function acquireDocument(
 export function releaseDocument(
 	workspaceId: string,
 	absolutePath: string,
+	groupAddressing: FileDocumentGroupAddressing | null = null,
 ): void {
-	const k = key(workspaceId, absolutePath);
+	const k = key(workspaceId, absolutePath, groupAddressing);
 	const entry = entries.get(k);
 	if (!entry) return;
 	entry.refCount -= 1;
@@ -415,8 +449,9 @@ export function releaseDocument(
 export function getDocument(
 	workspaceId: string,
 	absolutePath: string,
+	groupAddressing: FileDocumentGroupAddressing | null = null,
 ): SharedFileDocument | null {
-	const entry = entries.get(key(workspaceId, absolutePath));
+	const entry = entries.get(key(workspaceId, absolutePath, groupAddressing));
 	if (!entry) return null;
 	return createHandle(entry);
 }
@@ -460,10 +495,10 @@ export function dispatchFsEvent(
 			event.kind === "rename" &&
 			event.oldAbsolutePath === entry.absolutePath
 		) {
-			const oldKey = key(entry.workspaceId, entry.absolutePath);
+			const oldKey = keyForEntry(entry);
 			entries.delete(oldKey);
 			entry.absolutePath = event.absolutePath;
-			entries.set(key(entry.workspaceId, entry.absolutePath), entry);
+			entries.set(keyForEntry(entry), entry);
 			notify(entry);
 			continue;
 		}
