@@ -11,6 +11,20 @@ export interface FsEventsMessage {
 	events: FsWatchEvent[];
 }
 
+/**
+ * Group-addressed sibling of {@link FsEventsMessage} (Wave-2 M6). Folder roots
+ * have no `workspaceId`, so they are addressed by `{groupId, rootId}` (resolved
+ * to an absolute path via `getServiceForRootId`). The `events` payload is the
+ * exact same `FsWatchEvent[]` shape as the workspace-keyed channel; only the
+ * addressing differs, so the renderer can reuse its `fs:events` handling.
+ */
+export interface FsGroupEventsMessage {
+	type: "fs:groupEvents";
+	groupId: string;
+	rootId: string;
+	events: FsWatchEvent[];
+}
+
 export interface GitChangedMessage {
 	type: "git:changed";
 	workspaceId: string;
@@ -60,6 +74,7 @@ export interface EventBusErrorMessage {
 
 export type ServerMessage =
 	| FsEventsMessage
+	| FsGroupEventsMessage
 	| GitChangedMessage
 	| AgentLifecycleMessage
 	| TerminalLifecycleMessage
@@ -78,4 +93,25 @@ export interface FsUnwatchCommand {
 	workspaceId: string;
 }
 
-export type ClientMessage = FsWatchCommand | FsUnwatchCommand;
+/**
+ * Group-addressed sibling of {@link FsWatchCommand} (Wave-2 M6). Starts a watch
+ * on the absolute path that `{groupId, rootId}` resolves to. Mirrors `fs:watch`
+ * but for folder roots that have no `workspaceId`.
+ */
+export interface FsWatchGroupCommand {
+	type: "fs:watchGroup";
+	groupId: string;
+	rootId: string;
+}
+
+export interface FsUnwatchGroupCommand {
+	type: "fs:unwatchGroup";
+	groupId: string;
+	rootId: string;
+}
+
+export type ClientMessage =
+	| FsWatchCommand
+	| FsUnwatchCommand
+	| FsWatchGroupCommand
+	| FsUnwatchGroupCommand;

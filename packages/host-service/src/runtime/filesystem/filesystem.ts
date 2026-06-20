@@ -74,15 +74,25 @@ export class WorkspaceFilesystemManager {
 		groupId: string;
 		rootId: string;
 	}): FsHostService {
+		return this.getServiceForRootPath(this.resolveRootPath(input));
+	}
+
+	/**
+	 * Resolve a `{groupId, rootId}` group root to its absolute on-disk path —
+	 * the group-addressing analogue of {@link resolveWorkspaceRoot}. Used by the
+	 * event bus's group-addressed `fs:events` watch (Wave-2 M6) so folder roots
+	 * (which have no `workspaceId`) can live-refresh. Throws when the group or
+	 * root is unknown, or the path doesn't resolve to an existing directory.
+	 */
+	resolveRootPath(input: { groupId: string; rootId: string }): string {
 		const group = this.workspaceGroupStore.get(input.groupId);
 		if (!group) {
 			throw new Error(`Workspace group not found: ${input.groupId}`);
 		}
-		const rootPath = this.workspaceGroupResolver.resolveRootPathById({
+		return this.workspaceGroupResolver.resolveRootPathById({
 			group,
 			rootId: input.rootId,
 		});
-		return this.getServiceForRootPath(rootPath);
 	}
 
 	private getServiceForRootPath(rootPath: string): FsHostService {
