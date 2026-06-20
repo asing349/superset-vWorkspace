@@ -70,20 +70,25 @@ function getRootIdFilesystemService(
 }
 
 /**
- * Read-only filesystem procedures accept EITHER the existing workspace
- * addressing (`{ workspaceId }`) OR a multi-root group addressing
+ * Filesystem procedures — both reads and writes — accept EITHER the existing
+ * workspace addressing (`{ workspaceId }`) OR a multi-root group addressing
  * (`{ groupId, rootId }`). This zod schema captures the discriminating fields;
- * `pickReadService` selects the matching FS service. Both forms then share the
- * same remaining input (the per-call path/options).
+ * `pickService` selects the matching FS service. Both forms then share the same
+ * remaining input (the per-call path/options). The group form routes through
+ * `getServiceForRootId`, which serves folder roots (no `workspaceId`) and reuses
+ * the per-root-path cache. The underlying FS service enforces `isPathWithinRoot`
+ * sandboxing and the path-based `ifMatch` optimistic-concurrency precondition
+ * identically for either addressing — so widening writes here adds no new
+ * conflict infra.
  */
-const readAddressingSchema = z.union([
+const addressingSchema = z.union([
 	z.object({ workspaceId: z.string() }),
 	z.object({ groupId: z.string(), rootId: z.string() }),
 ]);
 
-type ReadAddressing = z.infer<typeof readAddressingSchema>;
+type Addressing = z.infer<typeof addressingSchema>;
 
-function pickReadService(ctx: HostServiceContext, addressing: ReadAddressing) {
+function pickService(ctx: HostServiceContext, addressing: Addressing) {
 	if ("workspaceId" in addressing) {
 		return getFilesystemService(ctx, addressing.workspaceId);
 	}
@@ -91,16 +96,16 @@ function pickReadService(ctx: HostServiceContext, addressing: ReadAddressing) {
 }
 
 /**
- * Split a read-procedure input into the FS service (selected by addressing) and
- * the remaining per-call fields the service expects. Strips both possible
- * addressing shapes so neither `workspaceId` nor `{ groupId, rootId }` leaks
- * into the service call.
+ * Split a procedure input into the FS service (selected by addressing) and the
+ * remaining per-call fields the service expects. Strips both possible addressing
+ * shapes so neither `workspaceId` nor `{ groupId, rootId }` leaks into the
+ * service call. Shared by read and write procedures.
  */
-function resolveReadServiceInput<T extends ReadAddressing>(
+function resolveServiceInput<T extends Addressing>(
 	ctx: HostServiceContext,
 	input: T,
 ) {
-	const service = pickReadService(ctx, input);
+	const service = pickService(ctx, input);
 	const { workspaceId, groupId, rootId, ...serviceInput } = input as T & {
 		workspaceId?: string;
 		groupId?: string;
@@ -222,14 +227,14 @@ export const filesystemRouter = router({
 	listDirectory: queryProcedure
 		.input(
 			z.intersection(
-				readAddressingSchema,
+				addressingSchema,
 				z.object({
 					absolutePath: z.string(),
 				}),
 			),
 		)
 		.query(async ({ ctx, input, signal }) => {
-			const { service, serviceInput } = resolveReadServiceInput(ctx, input);
+			const { service, serviceInput } = resolveServiceInput(ctx, input);
 			return await service.listDirectory(serviceInput, { signal });
 		}),
 
@@ -237,7 +242,7 @@ export const filesystemRouter = router({
 		.meta({ timeoutMs: 30_000 })
 		.input(
 			z.intersection(
-				readAddressingSchema,
+				addressingSchema,
 				z.object({
 					absolutePath: z.string(),
 					offset: z.number().optional(),
@@ -247,7 +252,7 @@ export const filesystemRouter = router({
 			),
 		)
 		.query(async ({ ctx, input }) => {
-			const { service, serviceInput } = resolveReadServiceInput(ctx, input);
+			const { service, serviceInput } = resolveServiceInput(ctx, input);
 			const result = await service.readFile(serviceInput);
 
 			if (result.kind === "bytes") {
@@ -263,14 +268,14 @@ export const filesystemRouter = router({
 	getMetadata: queryProcedure
 		.input(
 			z.intersection(
-				readAddressingSchema,
+				addressingSchema,
 				z.object({
 					absolutePath: z.string(),
 				}),
 			),
 		)
 		.query(async ({ ctx, input }) => {
-			const { service, serviceInput } = resolveReadServiceInput(ctx, input);
+			const { service, serviceInput } = resolveServiceInput(ctx, input);
 			return await service.getMetadata(serviceInput);
 		}),
 
@@ -332,91 +337,97 @@ export const filesystemRouter = router({
 
 	writeFile: protectedProcedure
 		.input(
-			z.object({
-				workspaceId: z.string(),
-				absolutePath: z.string(),
-				content: writeFileContentSchema,
-				encoding: z.string().optional(),
-				options: z
-					.object({
-						create: z.boolean(),
-						overwrite: z.boolean(),
-					})
-					.optional(),
-				precondition: z
-					.object({
-						ifMatch: z.string(),
-					})
-					.optional(),
-			}),
+			z.intersection(
+				addressingSchema,
+				z.object({
+					absolutePath: z.string(),
+					content: writeFileContentSchema,
+					encoding: z.string().optional(),
+					options: z
+						.object({
+							create: z.boolean(),
+							overwrite: z.boolean(),
+						})
+						.optional(),
+					precondition: z
+						.object({
+							ifMatch: z.string(),
+						})
+						.optional(),
+				}),
+			),
 		)
 		.mutation(async ({ ctx, input }) => {
-			const { workspaceId, content: rawContent, ...serviceInput } = input;
-			const service = getFilesystemService(ctx, workspaceId);
+			const { service, serviceInput } = resolveServiceInput(ctx, input);
+			const { content: rawContent, ...rest } = serviceInput;
 			const content =
 				typeof rawContent === "string"
 					? rawContent
 					: new Uint8Array(Buffer.from(rawContent.data, "base64"));
 
 			return await service.writeFile({
-				...serviceInput,
+				...rest,
 				content,
 			});
 		}),
 
 	createDirectory: protectedProcedure
 		.input(
-			z.object({
-				workspaceId: z.string(),
-				absolutePath: z.string(),
-				recursive: z.boolean().optional(),
-			}),
+			z.intersection(
+				addressingSchema,
+				z.object({
+					absolutePath: z.string(),
+					recursive: z.boolean().optional(),
+				}),
+			),
 		)
 		.mutation(async ({ ctx, input }) => {
-			const { workspaceId, ...serviceInput } = input;
-			const service = getFilesystemService(ctx, workspaceId);
+			const { service, serviceInput } = resolveServiceInput(ctx, input);
 			return await service.createDirectory(serviceInput);
 		}),
 
 	deletePath: protectedProcedure
 		.input(
-			z.object({
-				workspaceId: z.string(),
-				absolutePath: z.string(),
-				permanent: z.boolean().optional(),
-			}),
+			z.intersection(
+				addressingSchema,
+				z.object({
+					absolutePath: z.string(),
+					permanent: z.boolean().optional(),
+				}),
+			),
 		)
 		.mutation(async ({ ctx, input }) => {
-			const { workspaceId, ...serviceInput } = input;
-			const service = getFilesystemService(ctx, workspaceId);
+			const { service, serviceInput } = resolveServiceInput(ctx, input);
 			return await service.deletePath(serviceInput);
 		}),
 
 	movePath: protectedProcedure
 		.input(
-			z.object({
-				workspaceId: z.string(),
-				sourceAbsolutePath: z.string(),
-				destinationAbsolutePath: z.string(),
-			}),
+			z.intersection(
+				addressingSchema,
+				z.object({
+					sourceAbsolutePath: z.string(),
+					destinationAbsolutePath: z.string(),
+				}),
+			),
 		)
 		.mutation(async ({ ctx, input }) => {
-			const { workspaceId, ...serviceInput } = input;
-			const service = getFilesystemService(ctx, workspaceId);
+			const { service, serviceInput } = resolveServiceInput(ctx, input);
 			return await service.movePath(serviceInput);
 		}),
 
 	copyPath: protectedProcedure
 		.input(
-			z.object({
-				workspaceId: z.string(),
-				sourceAbsolutePath: z.string(),
-				destinationAbsolutePath: z.string(),
-			}),
+			z.intersection(
+				addressingSchema,
+				z.object({
+					sourceAbsolutePath: z.string(),
+					destinationAbsolutePath: z.string(),
+				}),
+			),
 		)
 		.mutation(async ({ ctx, input }) => {
-			const { workspaceId, ...serviceInput } = input;
-			const service = getFilesystemService(ctx, workspaceId);
+			const { service, serviceInput } = resolveServiceInput(ctx, input);
 			return await service.copyPath(serviceInput);
 		}),
 
@@ -492,7 +503,7 @@ export const filesystemRouter = router({
 		.meta({ timeoutMs: 60_000 })
 		.input(
 			z.intersection(
-				readAddressingSchema,
+				addressingSchema,
 				z.object({
 					query: z.string(),
 					includeHidden: z.boolean().optional(),
@@ -508,7 +519,7 @@ export const filesystemRouter = router({
 				return { matches: [] };
 			}
 
-			const { service, serviceInput } = resolveReadServiceInput(ctx, input);
+			const { service, serviceInput } = resolveServiceInput(ctx, input);
 			return await service.searchContent({
 				...serviceInput,
 				query: trimmedQuery,
