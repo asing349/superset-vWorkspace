@@ -9,6 +9,11 @@ import {
 
 type WorkspaceTrpcClient = ReturnType<typeof workspaceTrpc.createClient>;
 
+/** Recorded args of a single `filesystem.writeFile.mutate` call. */
+type WriteFileArgs = Parameters<
+	WorkspaceTrpcClient["filesystem"]["writeFile"]["mutate"]
+>[0];
+
 /**
  * Wave-2 M2 — document-cache addressing key.
  *
@@ -43,6 +48,39 @@ function makeStubClient(): WorkspaceTrpcClient {
 		},
 	};
 	return stub as unknown as WorkspaceTrpcClient;
+}
+
+/**
+ * Stub client that records every `filesystem.writeFile.mutate` call into
+ * `writes`, so a `save()` can be asserted on the addressing it sent. `readFile`
+ * returns seeded text with a known revision so the document loads as editable
+ * text (required for `save()` to take the text path).
+ */
+function makeRecordingClient(seed: { content: string; revision: string }): {
+	client: WorkspaceTrpcClient;
+	writes: WriteFileArgs[];
+} {
+	const writes: WriteFileArgs[] = [];
+	const stub = {
+		filesystem: {
+			readFile: {
+				query: async () => ({
+					kind: "text" as const,
+					content: seed.content,
+					revision: seed.revision,
+					byteLength: seed.content.length,
+					exceededLimit: false,
+				}),
+			},
+			writeFile: {
+				mutate: async (args: WriteFileArgs) => {
+					writes.push(args);
+					return { ok: true as const, revision: "r-after" };
+				},
+			},
+		},
+	};
+	return { client: stub as unknown as WorkspaceTrpcClient, writes };
 }
 
 describe("documentAddressingKey", () => {
@@ -143,5 +181,92 @@ describe("acquireDocument cache keying by (addressing, absolutePath)", () => {
 		expect(getDocument("folder:root-y", path, null)).toBeNull();
 
 		releaseDocument("folder:root-y", path, grouped);
+	});
+});
+
+/**
+ * Wave-2 M1 / M9 — folder-root save addressing (`writeAddressing()`).
+ *
+ * `save()` spreads `writeAddressing(entry)` into `filesystem.writeFile.mutate`.
+ * The host write procedures accept the `{ workspaceId } | { groupId, rootId }`
+ * union (M1), so a document carrying `groupAddressing` MUST produce a write
+ * addressed by `{ groupId, rootId }` (the only addressing a `kind: "folder"`
+ * root has — its `workspaceId` field is a `folder:<rootId>` cache surrogate the
+ * host can't resolve), while a single-workspace document MUST produce a write
+ * addressed by `{ workspaceId }` byte-for-byte as before.
+ */
+describe("save() write addressing (folder-root vs workspace)", () => {
+	// `acquireDocument` fires `void loadEntry(entry)`; wait for the text content
+	// to settle so the handle's content.kind is "text" before saving.
+	async function waitForText(
+		doc: ReturnType<typeof acquireDocument>,
+	): Promise<void> {
+		for (let i = 0; i < 50; i += 1) {
+			if (doc.content.kind === "text") return;
+			await Promise.resolve();
+		}
+		throw new Error(`document did not load as text (kind=${doc.content.kind})`);
+	}
+
+	test("group-addressed document saves via { groupId, rootId }", async () => {
+		const { client, writes } = makeRecordingClient({
+			content: "before",
+			revision: "r0",
+		});
+		const path = "/some/folder/notes.md";
+		const grouped = { groupId: "grp-1", rootId: "root-1" };
+
+		// `kind:"folder"` roots use a `folder:<rootId>` surrogate workspaceId.
+		const doc = acquireDocument("folder:root-1", path, client, grouped);
+		await waitForText(doc);
+
+		doc.setContent("after");
+		const result = await doc.save();
+
+		expect(result.status).toBe("saved");
+		expect(writes).toHaveLength(1);
+		const sent = writes[0];
+		// Routed by the group addressing — NOT the surrogate workspaceId.
+		expect(sent).toMatchObject({
+			groupId: "grp-1",
+			rootId: "root-1",
+			absolutePath: path,
+			content: "after",
+			encoding: "utf-8",
+		});
+		expect("workspaceId" in (sent ?? {})).toBe(false);
+		// Optimistic-concurrency precondition uses the loaded revision.
+		expect(sent?.precondition).toEqual({ ifMatch: "r0" });
+
+		releaseDocument("folder:root-1", path, grouped);
+	});
+
+	test("single-workspace document saves via { workspaceId } (unchanged path)", async () => {
+		const { client, writes } = makeRecordingClient({
+			content: "before",
+			revision: "r0",
+		});
+		const path = "/repo/src/main.ts";
+
+		const doc = acquireDocument("ws-77", path, client, null);
+		await waitForText(doc);
+
+		doc.setContent("after");
+		const result = await doc.save();
+
+		expect(result.status).toBe("saved");
+		expect(writes).toHaveLength(1);
+		const sent = writes[0];
+		expect(sent).toMatchObject({
+			workspaceId: "ws-77",
+			absolutePath: path,
+			content: "after",
+			encoding: "utf-8",
+		});
+		// No group fields leak into the single-workspace write.
+		expect("groupId" in (sent ?? {})).toBe(false);
+		expect("rootId" in (sent ?? {})).toBe(false);
+
+		releaseDocument("ws-77", path, null);
 	});
 });

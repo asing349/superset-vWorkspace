@@ -1,6 +1,13 @@
 import { workspaceTrpc } from "@superset/workspace-client";
 import { useMemo } from "react";
 import { useWorkspaceGroup } from "../../providers/WorkspaceGroupProvider";
+import {
+	type FileSearchRootMatches,
+	type GroupFileSearchResult,
+	mergeFileSearchResults,
+} from "./utils/mergeFileSearchResults";
+
+export type { GroupFileSearchResult } from "./utils/mergeFileSearchResults";
 
 const SEARCH_LIMIT_PER_ROOT = 50;
 const MERGED_RESULT_LIMIT = 50;
@@ -13,26 +20,6 @@ const MERGED_RESULT_LIMIT = 50;
 // adding one is not "straightforward" per the task scope. The file-name
 // quick-open below is the required Q4 piece; content search is the secondary
 // nicety and is left for a follow-up that designs the panel UX.
-
-/**
- * One merged, ranked file-name search result across every root of the group.
- * `rootId` is what `useGroupFileNavigation.openFilePane` needs to open the file
- * from the correct root; `rootLabel` is shown in the result row so the user can
- * tell which root a match came from when the same relative path exists in two.
- */
-export interface GroupFileSearchResult {
-	/** Stable, root-scoped id (`<rootId>:<absolutePath>`) — unique across roots. */
-	id: string;
-	name: string;
-	absolutePath: string;
-	relativePath: string;
-	/** The root this match came from (drives `openFilePane`'s FS routing). */
-	rootId: string;
-	/** Display label of the owning root (per-result label, Q4). */
-	rootLabel: string;
-	/** Fuzzy score from the host scorer; used to interleave roots by relevance. */
-	score: number;
-}
 
 /**
  * Cross-root quick-open search (Q4 fan-out-and-merge).
@@ -88,37 +75,21 @@ export function useGroupFileSearch(query: string): {
 	const results = useMemo<GroupFileSearchResult[]>(() => {
 		if (!hasQuery) return [];
 
-		const merged: GroupFileSearchResult[] = [];
-		const seen = new Set<string>();
-
+		const rootMatches: FileSearchRootMatches[] = [];
 		queries.forEach((queryResult, index) => {
 			const root = searchableRoots[index];
 			if (!root) return;
-			const matches = queryResult.data?.matches ?? [];
-			for (const match of matches) {
-				const id = `${root.rootId}:${match.absolutePath}`;
-				if (seen.has(id)) continue;
-				seen.add(id);
-				merged.push({
-					id,
-					name: match.name,
-					absolutePath: match.absolutePath,
-					relativePath: match.relativePath,
-					rootId: root.rootId,
-					rootLabel: root.label,
-					score: match.score,
-				});
-			}
+			rootMatches.push({
+				rootId: root.rootId,
+				rootLabel: root.label,
+				matches: queryResult.data?.matches ?? [],
+			});
 		});
 
-		// Interleave roots by relevance: highest fuzzy score first. Ties break on
-		// relativePath for a stable, deterministic order.
-		merged.sort((a, b) => {
-			if (b.score !== a.score) return b.score - a.score;
-			return a.relativePath.localeCompare(b.relativePath);
+		return mergeFileSearchResults({
+			rootMatches,
+			limit: MERGED_RESULT_LIMIT,
 		});
-
-		return merged.slice(0, MERGED_RESULT_LIMIT);
 	}, [hasQuery, queries, searchableRoots]);
 
 	return { results, isFetching };
