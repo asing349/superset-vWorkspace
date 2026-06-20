@@ -38,6 +38,14 @@ interface CreateWorktreeDialogProps {
 	 * accumulating it for a single `workspaceGroup.create` (the create dialog).
 	 */
 	onAddRoot: (root: WorkspaceGroupRootInput) => void | Promise<void>;
+	/**
+	 * Pre-select (and lock) the project picker to this host project id (Wave-2
+	 * M4). The "Add folder → set up as project" / "Promote to repo" flow imports
+	 * a repo to a known project id, then opens this dialog pinned to it so the
+	 * user only chooses base + new branch. When omitted, the user picks any
+	 * imported project (the M3 path).
+	 */
+	presetProjectId?: string;
 }
 
 /**
@@ -56,11 +64,15 @@ export function CreateWorktreeDialog({
 	open,
 	onOpenChange,
 	onAddRoot,
+	presetProjectId,
 }: CreateWorktreeDialogProps) {
 	const { projects, isReady: projectsReady } = useWorktreeProjects();
 	const { createWorktree } = useCreateWorktreeRoot();
 
-	const [projectId, setProjectId] = useState<string | null>(null);
+	const projectLocked = presetProjectId !== undefined;
+	const [projectId, setProjectId] = useState<string | null>(
+		presetProjectId ?? null,
+	);
 	const [projectPickerOpen, setProjectPickerOpen] = useState(false);
 	const [projectQuery, setProjectQuery] = useState("");
 	const [baseBranch, setBaseBranch] = useState<string | null>(null);
@@ -92,8 +104,19 @@ export function CreateWorktreeDialog({
 		}
 	}, [projectId, baseBranch, defaultBranch]);
 
+	// When a preset project id is provided (the M4 import/promote flow), pin the
+	// picker to it whenever the dialog opens or the preset changes, resetting the
+	// base branch so the pinned project's default can apply.
+	useEffect(() => {
+		if (open && presetProjectId !== undefined) {
+			setProjectId(presetProjectId);
+			setBaseBranch(null);
+			setBranchQuery("");
+		}
+	}, [open, presetProjectId]);
+
 	const reset = () => {
-		setProjectId(null);
+		setProjectId(presetProjectId ?? null);
 		setProjectQuery("");
 		setBaseBranch(null);
 		setBranchQuery("");
@@ -178,11 +201,15 @@ export function CreateWorktreeDialog({
 
 	const projectTriggerLabel = selectedProject
 		? selectedProject.name
-		: projectsReady
-			? projects.length === 0
-				? "No projects on this device"
-				: "Select a project"
-			: "Loading projects…";
+		: projectLocked
+			? // Locked to the just-imported project; the list may still be loading
+				// its enriched row.
+				"Imported repository"
+			: projectsReady
+				? projects.length === 0
+					? "No projects on this device"
+					: "Select a project"
+				: "Loading projects…";
 
 	const baseBranchLabel = baseBranch ?? defaultBranch ?? "Select base branch";
 
@@ -202,8 +229,8 @@ export function CreateWorktreeDialog({
 					<div className="flex flex-col gap-1.5">
 						<Label className="text-xs">Project</Label>
 						<Popover
-							open={projectPickerOpen}
-							onOpenChange={setProjectPickerOpen}
+							open={projectLocked ? false : projectPickerOpen}
+							onOpenChange={projectLocked ? undefined : setProjectPickerOpen}
 						>
 							<PopoverTrigger asChild>
 								<Button
@@ -211,7 +238,11 @@ export function CreateWorktreeDialog({
 									variant="outline"
 									role="combobox"
 									aria-expanded={projectPickerOpen}
-									disabled={working || (projectsReady && projects.length === 0)}
+									disabled={
+										working ||
+										projectLocked ||
+										(projectsReady && projects.length === 0)
+									}
 									className="w-full justify-between gap-2 font-normal"
 								>
 									<span className="flex min-w-0 items-center gap-2">
@@ -219,13 +250,17 @@ export function CreateWorktreeDialog({
 										<span
 											className={cn(
 												"truncate",
-												!selectedProject && "text-muted-foreground",
+												!selectedProject &&
+													!projectLocked &&
+													"text-muted-foreground",
 											)}
 										>
 											{projectTriggerLabel}
 										</span>
 									</span>
-									<LuChevronsUpDown className="size-4 shrink-0 opacity-50" />
+									{!projectLocked && (
+										<LuChevronsUpDown className="size-4 shrink-0 opacity-50" />
+									)}
 								</Button>
 							</PopoverTrigger>
 							<PopoverContent

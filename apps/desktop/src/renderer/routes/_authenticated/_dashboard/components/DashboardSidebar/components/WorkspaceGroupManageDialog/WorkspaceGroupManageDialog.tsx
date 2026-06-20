@@ -16,17 +16,21 @@ import {
 	LuChevronDown,
 	LuChevronUp,
 	LuFolder,
+	LuFolderGit2,
 	LuLayers,
 	LuStar,
 	LuTrash2,
 	LuTriangleAlert,
 } from "react-icons/lu";
+import { useFolderRootRepoStatus } from "../../hooks/useFolderRootRepoStatus";
+import { useImportRepoRoot } from "../../hooks/useImportRepoRoot";
 import type {
 	ResolvedWorkspaceGroup,
 	WorkspaceGroupRootInput,
 } from "../../hooks/useWorkspaceGroups";
 import { useWorkspaceGroups } from "../../hooks/useWorkspaceGroups";
 import { AddRootMenu } from "../AddRootMenu";
+import { CreateWorktreeDialog } from "../CreateWorktreeDialog";
 
 interface WorkspaceGroupManageDialogProps {
 	open: boolean;
@@ -59,9 +63,16 @@ export function WorkspaceGroupManageDialog({
 }: WorkspaceGroupManageDialogProps) {
 	const { rename, addRoot, removeRoot, reorderRoots, setDefaultRoot } =
 		useWorkspaceGroups();
+	const { ensureProject } = useImportRepoRoot();
 
 	const [nameDraft, setNameDraft] = useState(group.name);
 	const [busy, setBusy] = useState(false);
+	// The in-flight promotion: the worktree dialog is pinned to the imported
+	// project, and on success we replace `folderRootId` (Q1 default = replace).
+	const [promotion, setPromotion] = useState<{
+		folderRootId: string;
+		projectId: string;
+	} | null>(null);
 
 	// Keep the rename draft in sync when the underlying group changes (e.g. a
 	// concurrent rename) but only while the field isn't being edited mid-flight.
@@ -83,6 +94,25 @@ export function WorkspaceGroupManageDialog({
 			),
 		[roots],
 	);
+
+	// Probe folder roots that exist on disk for "is actually a git repo" so we can
+	// offer "Promote to repo" (Wave-2 M4). Only probe while the dialog is open.
+	const folderRootProbes = useMemo(
+		() =>
+			open
+				? roots
+						.filter(
+							(root) =>
+								root.kind === "folder" && root.exists && !!root.rootPath,
+						)
+						.map((root) => ({
+							rootId: root.rootId,
+							folderPath: root.rootPath,
+						}))
+				: [],
+		[open, roots],
+	);
+	const { promotableRootIds } = useFolderRootRepoStatus(folderRootProbes);
 
 	const runMutation = async (
 		fn: () => Promise<ResolvedWorkspaceGroup>,
@@ -131,6 +161,62 @@ export function WorkspaceGroupManageDialog({
 	const handleSetDefault = async (rootId: string) => {
 		const next = group.defaultRootId === rootId ? null : rootId;
 		await runMutation(() => setDefaultRoot({ id: group.id, rootId: next }));
+	};
+
+	// "Promote to repo" (Wave-2 M4): a folder root that is actually a git repo
+	// becomes a first-class, worktree-capable root. Set up/register the project,
+	// then open the create-worktree dialog pinned to it. The folder root is
+	// removed only AFTER the worktree root is successfully added (see
+	// `handlePromoteAddRoot`), so a failure never leaves the group worse off.
+	const handlePromote = async (folderRootId: string, folderPath: string) => {
+		setBusy(true);
+		try {
+			const { projectId } = await ensureProject({ folderPath });
+			setPromotion({ folderRootId, projectId });
+		} catch (error) {
+			toast.error(
+				error instanceof Error
+					? error.message
+					: "Could not set up this folder as a repository",
+			);
+		} finally {
+			setBusy(false);
+		}
+	};
+
+	/**
+	 * `onAddRoot` for the in-flight promotion. Q1 default = REPLACE: add the new
+	 * worktree root FIRST, then remove the now-redundant folder root. Ordering is
+	 * deliberate — if `addRoot` throws it propagates (the dialog surfaces it and
+	 * the created worktree is recoverable), and we NEVER remove the folder root,
+	 * so the group is no worse off. If only the folder removal fails, the worktree
+	 * root is already present, so we surface a soft message and leave the
+	 * redundant folder root for manual removal rather than failing the promotion.
+	 */
+	const handlePromoteAddRoot = async (root: WorkspaceGroupRootInput) => {
+		const active = promotion;
+		// 1) Add the worktree root first. A throw here propagates to the dialog's
+		//    catch — the folder root is left intact.
+		const afterAdd = await addRoot({ id: group.id, root });
+		onMutated?.(afterAdd);
+
+		// 2) Replace: remove the redundant folder root. Best-effort — the worktree
+		//    is already added, so a failure here is non-fatal.
+		if (active) {
+			try {
+				const afterRemove = await removeRoot({
+					id: group.id,
+					rootId: active.folderRootId,
+				});
+				onMutated?.(afterRemove);
+			} catch (error) {
+				toast.error(
+					error instanceof Error
+						? `Promoted to a worktree root, but the old folder root could not be removed: ${error.message}. Remove it manually.`
+						: "Promoted to a worktree root, but the old folder root could not be removed. Remove it manually.",
+				);
+			}
+		}
 	};
 
 	return (
@@ -217,6 +303,21 @@ export function WorkspaceGroupManageDialog({
 													</span>
 												</div>
 
+												{root.kind === "folder" &&
+													promotableRootIds.has(root.rootId) && (
+														<button
+															type="button"
+															aria-label={`Promote ${root.label} to a repository`}
+															title="This folder is a git repository — promote it to a worktree-capable root"
+															onClick={() =>
+																void handlePromote(root.rootId, root.rootPath)
+															}
+															disabled={busy}
+															className="rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+														>
+															<LuFolderGit2 className="size-4" />
+														</button>
+													)}
 												<button
 													type="button"
 													aria-label={
@@ -287,6 +388,19 @@ export function WorkspaceGroupManageDialog({
 					</Button>
 				</div>
 			</DialogContent>
+
+			{/* Promotion (M4): pinned to the imported project; on success it adds the
+			    worktree root then removes the folder root (replace). */}
+			{promotion && (
+				<CreateWorktreeDialog
+					open
+					onOpenChange={(next) => {
+						if (!next) setPromotion(null);
+					}}
+					onAddRoot={handlePromoteAddRoot}
+					presetProjectId={promotion.projectId}
+				/>
+			)}
 		</Dialog>
 	);
 }
