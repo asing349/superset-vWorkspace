@@ -1,4 +1,6 @@
+import { Database } from "bun:sqlite";
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { randomUUID } from "node:crypto";
 import {
 	lstatSync,
 	mkdirSync,
@@ -8,14 +10,35 @@ import {
 	rmSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
+import { eq } from "drizzle-orm";
+import { drizzle } from "drizzle-orm/bun-sqlite";
+import { migrate } from "drizzle-orm/bun-sqlite/migrator";
+import type { HostDb } from "../../db/index.ts";
+import * as schema from "../../db/schema";
+import { projects, workspaces } from "../../db/schema";
 import {
 	getGroupAgentRootPath,
 	getSupersetHomeDir,
 	prepareAgentRoot,
 	prepareAgentRootSerialized,
 } from "./prepare-agent-root.ts";
+import { WorkspaceGroupResolver } from "./resolve.ts";
+import {
+	createInMemoryWorkspaceGroupStore,
+	type WorkspaceGroupStore,
+} from "./store.ts";
 import type { ResolvedWorkspaceGroupRoot } from "./types.ts";
+
+const MIGRATIONS_FOLDER = resolve(import.meta.dir, "../../../drizzle");
+
+function buildDb(): HostDb {
+	const sqlite = new Database(":memory:");
+	sqlite.exec("PRAGMA foreign_keys = ON;");
+	const db = drizzle(sqlite, { schema });
+	migrate(db, { migrationsFolder: MIGRATIONS_FOLDER });
+	return db as unknown as HostDb;
+}
 
 const GROUP_ID = "group-abc";
 
@@ -267,6 +290,165 @@ describe("prepareAgentRoot", () => {
 			});
 			expect(again.agentRootPath).toBe(getGroupAgentRootPath(GROUP_ID));
 			expect(linkNames(again.agentRootPath)).toEqual(["alpha"]);
+		});
+	});
+
+	/**
+	 * Wave-2 M9: a `kind: "workspace"` root resolves (via the resolver + a host
+	 * `workspaces` row) to that workspace's `worktreePath`, and `prepareAgentRoot`
+	 * symlinks the synthetic dir at the WORKTREE PATH (not the workspaceId) —
+	 * alongside a `kind: "folder"` root. The wave-1/2 prepare-agent-root tests
+	 * above only exercise folder roots (they pass `rootPath` directly); this
+	 * block exercises the resolver → prepare composition the combined agent
+	 * actually runs for a worktree-backed root, including the skip-missing path
+	 * for a workspace whose row was deleted.
+	 */
+	describe("workspace-root resolution (resolver → prepareAgentRoot)", () => {
+		let db: HostDb;
+		let store: WorkspaceGroupStore;
+		let resolver: WorkspaceGroupResolver;
+		let projectId: string;
+		let worktreePath: string;
+		let folderPath: string;
+
+		beforeEach(() => {
+			db = buildDb();
+			store = createInMemoryWorkspaceGroupStore();
+			resolver = new WorkspaceGroupResolver({ db });
+
+			// A real on-disk worktree dir + a folder dir under the disposable targets.
+			worktreePath = makeTargetDir("worktree-feature");
+			folderPath = makeTargetDir("plain-folder");
+
+			// Seed a project + a workspaces row whose worktreePath points at the
+			// worktree dir, exactly as a created worktree would (seed.ts shape).
+			projectId = randomUUID();
+			db.insert(projects)
+				.values({ id: projectId, repoPath: makeTargetDir("repo-main") })
+				.run();
+		});
+
+		afterEach(() => {
+			(db as unknown as { $client?: { close: () => void } }).$client?.close();
+		});
+
+		function seedWorkspaceRow(worktreePathValue: string): string {
+			const id = randomUUID();
+			db.insert(workspaces)
+				.values({
+					id,
+					projectId,
+					worktreePath: worktreePathValue,
+					branch: "feature/x",
+				})
+				.run();
+			return id;
+		}
+
+		it("symlinks a workspace root at its resolved worktree path, alongside a folder root", () => {
+			const workspaceId = seedWorkspaceRow(worktreePath);
+
+			const created = store.create({
+				name: "mixed",
+				roots: [
+					{
+						kind: "workspace",
+						workspaceId,
+						folderPath: null,
+						label: "Feature",
+					},
+					{
+						kind: "folder",
+						workspaceId: null,
+						folderPath,
+						label: "Notes",
+					},
+				],
+			});
+
+			const group = store.get(created.id);
+			if (!group) throw new Error("expected group to exist");
+			const resolved = resolver.resolveGroup(group);
+
+			// The resolver turned the workspaceId into the worktree path…
+			const workspaceResolved = resolved.roots.find(
+				(r) => r.kind === "workspace",
+			);
+			expect(workspaceResolved?.rootPath).toBe(worktreePath);
+			expect(workspaceResolved?.exists).toBe(true);
+
+			// …and prepareAgentRoot symlinks the synthetic dir at that worktree path,
+			// NOT at the workspaceId, beside the folder root's link.
+			const result = prepareAgentRoot({
+				groupId: created.id,
+				roots: resolved.roots,
+			});
+			expect(linkNames(result.agentRootPath).length).toBe(2);
+			expect(result.skippedRootIds).toEqual([]);
+			expect(readlinkSync(join(result.agentRootPath, "Feature"))).toBe(
+				worktreePath,
+			);
+			expect(readlinkSync(join(result.agentRootPath, "Notes"))).toBe(
+				folderPath,
+			);
+			expect(
+				lstatSync(join(result.agentRootPath, "Feature")).isSymbolicLink(),
+			).toBe(true);
+		});
+
+		it("skips a workspace root whose workspaces row was deleted, keeping the folder root", () => {
+			const workspaceId = seedWorkspaceRow(worktreePath);
+			const created = store.create({
+				name: "stale-after-delete",
+				roots: [
+					{
+						kind: "workspace",
+						workspaceId,
+						folderPath: null,
+						label: "Feature",
+					},
+					{
+						kind: "folder",
+						workspaceId: null,
+						folderPath,
+						label: "Notes",
+					},
+				],
+			});
+			const workspaceRootId = created.roots.find(
+				(r) => r.kind === "workspace",
+			)?.rootId;
+			if (!workspaceRootId) throw new Error("expected a workspace root id");
+
+			// First prepare: both roots present and linked.
+			const groupBefore = store.get(created.id);
+			if (!groupBefore) throw new Error("expected group to exist");
+			const first = prepareAgentRoot({
+				groupId: created.id,
+				roots: resolver.resolveGroup(groupBefore).roots,
+			});
+			expect(linkNames(first.agentRootPath).sort()).toEqual([
+				"Feature",
+				"Notes",
+			]);
+
+			// Delete the workspaces row out from under the group. The resolver now
+			// resolves the workspace root to "" / exists:false (no throw); a re-run
+			// removes the stale link and reports it skipped, leaving the folder root.
+			db.delete(workspaces).where(eq(workspaces.id, workspaceId)).run();
+			const groupAfter = store.get(created.id);
+			if (!groupAfter) throw new Error("expected group to exist");
+			const resolvedAfter = resolver.resolveGroup(groupAfter);
+			expect(
+				resolvedAfter.roots.find((r) => r.kind === "workspace")?.exists,
+			).toBe(false);
+
+			const second = prepareAgentRoot({
+				groupId: created.id,
+				roots: resolvedAfter.roots,
+			});
+			expect(linkNames(second.agentRootPath)).toEqual(["Notes"]);
+			expect(second.skippedRootIds).toEqual([workspaceRootId]);
 		});
 	});
 });

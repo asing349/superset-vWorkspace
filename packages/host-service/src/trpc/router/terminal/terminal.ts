@@ -127,6 +127,15 @@ async function resolveRootTarget(
 	return { rootPath: root.rootPath };
 }
 
+/**
+ * Test-only re-export of {@link resolveRootTarget} (Wave-2 M9). The resolution
+ * layer (group → `{ rootPath, groupRootPaths? }`) is the wiring under test; the
+ * production code path stays the private `resolveRootTarget` above. Exported
+ * additively so the terminal `rootTarget`/`agentRoot` resolution can be tested
+ * without spawning a real PTY through `createTerminalSessionInternal`.
+ */
+export const __resolveRootTargetForTesting = resolveRootTarget;
+
 async function createTerminalSessionFromInput({
 	ctx,
 	input,
