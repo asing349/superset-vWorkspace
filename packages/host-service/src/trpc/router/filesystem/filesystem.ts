@@ -42,6 +42,24 @@ function getFilesystemService(ctx: HostServiceContext, workspaceId: string) {
 }
 
 /**
+ * Translate the runtime's group-root resolution errors (unknown group, root not
+ * in group, or a root that doesn't resolve to an existing path) into a tRPC
+ * NOT_FOUND. Shared by `getServiceForRootId` and `resolveRootPath` callers so
+ * the service-returning and path-returning group resolvers report identically.
+ */
+function rethrowRootResolveError(error: unknown): never {
+	if (
+		error instanceof Error &&
+		(error.message.startsWith("Workspace group not found:") ||
+			error.message.includes("not found in group") ||
+			error.message.includes("does not resolve to an existing path"))
+	) {
+		throw new TRPCError({ code: "NOT_FOUND", message: error.message });
+	}
+	throw error;
+}
+
+/**
  * Resolve the FS service for a multi-root workspace ("group") root addressing.
  * Translates the runtime's not-found / unresolvable errors into tRPC codes.
  */
@@ -52,20 +70,37 @@ function getRootIdFilesystemService(
 	try {
 		return ctx.runtime.filesystem.getServiceForRootId(input);
 	} catch (error) {
-		if (
-			error instanceof Error &&
-			error.message.startsWith("Workspace group not found:")
-		) {
-			throw new TRPCError({ code: "NOT_FOUND", message: error.message });
+		rethrowRootResolveError(error);
+	}
+}
+
+/**
+ * Resolve the absolute on-disk root path for either addressing form. Mirrors
+ * `pickService` but returns a path (not an FS service) — used by `statPath`,
+ * which stats with `node:fs` directly and only needs the root for resolving
+ * RELATIVE paths. The workspace form uses `resolveWorkspaceRoot`; the group
+ * form uses `resolveRootPath` (serves folder roots with no `workspaceId`).
+ */
+function pickRootPath(ctx: HostServiceContext, addressing: Addressing): string {
+	if ("workspaceId" in addressing) {
+		try {
+			return ctx.runtime.filesystem.resolveWorkspaceRoot(
+				addressing.workspaceId,
+			);
+		} catch (error) {
+			if (
+				error instanceof Error &&
+				error.message.startsWith("Workspace not found:")
+			) {
+				throw new TRPCError({ code: "NOT_FOUND", message: error.message });
+			}
+			throw error;
 		}
-		if (
-			error instanceof Error &&
-			(error.message.includes("not found in group") ||
-				error.message.includes("does not resolve to an existing path"))
-		) {
-			throw new TRPCError({ code: "NOT_FOUND", message: error.message });
-		}
-		throw error;
+	}
+	try {
+		return ctx.runtime.filesystem.resolveRootPath(addressing);
+	} catch (error) {
+		rethrowRootResolveError(error);
 	}
 }
 
@@ -288,13 +323,22 @@ export const filesystemRouter = router({
 	 * - Absolute paths: /foo/bar → stat directly (must be within workspace)
 	 * - Relative paths: src/file.ts → resolved against workspace root
 	 * - Tilde paths: ~/foo → resolved against $HOME
+	 *
+	 * Addressing (Wave-2 M7): accepts EITHER `{ workspaceId }` (original) OR
+	 * `{ groupId, rootId }`. The group form resolves the root via
+	 * `resolveRootPath`, so relative paths in the combined-agent / folder-root
+	 * terminal output become statt-able (and thus clickable) for folder roots
+	 * (which have no `workspaceId`). The same shared `addressingSchema` the read
+	 * and write procedures use; only the relative-path base root differs by form.
 	 */
 	statPath: protectedProcedure
 		.input(
-			z.object({
-				workspaceId: z.string(),
-				path: z.string(),
-			}),
+			z.intersection(
+				addressingSchema,
+				z.object({
+					path: z.string(),
+				}),
+			),
 		)
 		.mutation(
 			async ({
@@ -304,9 +348,7 @@ export const filesystemRouter = router({
 				resolvedPath: string;
 				isDirectory: boolean;
 			} | null> => {
-				const resolvedRoot = ctx.runtime.filesystem.resolveWorkspaceRoot(
-					input.workspaceId,
-				);
+				const resolvedRoot = pickRootPath(ctx, input);
 
 				let targetPath: string;
 				if (input.path.startsWith("~")) {
