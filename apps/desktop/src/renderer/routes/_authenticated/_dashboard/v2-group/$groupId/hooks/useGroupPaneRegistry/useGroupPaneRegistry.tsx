@@ -31,6 +31,35 @@ export interface GroupTerminalOpenFileInput {
 	openInNewTab?: boolean;
 }
 
+/**
+ * Addressing for a terminal file-link `filesystem.statPath` call — the same
+ * `{ workspaceId } | { groupId, rootId }` union the host `statPath` procedure
+ * accepts (wave-2 M7 widened `statPath` to the shared addressing union). Passed
+ * to `GroupTerminalPane`, which spreads it into the `statPath` mutation input.
+ *
+ * - `kind: "workspace"` roots stat via `{ workspaceId }` (unchanged behavior).
+ * - `kind: "folder"` roots and the combined-agent root stat via
+ *   `{ groupId, rootId }`. For ABSOLUTE terminal-output paths the host ignores
+ *   the resolved root entirely (it stats the absolute path host-wide), so any
+ *   resolvable `{ groupId, rootId }` of the group makes absolute agent/folder
+ *   paths clickable; for RELATIVE paths the root supplies the join base.
+ */
+export type GroupTerminalStatAddressing =
+	| { workspaceId: string }
+	| { groupId: string; rootId: string };
+
+/**
+ * The stat addressing + the `rootId` to stamp on a clicked-open file pane, for a
+ * given terminal pane's `rootId`. `null` addressing → file links are
+ * non-interactive (no resolvable root); `openRootId` is the root a clicked path
+ * opens under (it namespaces the editor document cache + supplies read
+ * addressing — absolute paths still open host-wide via that root's FS service).
+ */
+interface GroupTerminalLinkTarget {
+	statAddressing: GroupTerminalStatAddressing | null;
+	openRootId: string | null;
+}
+
 function getFileName(filePath: string): string {
 	return getBaseName(filePath);
 }
@@ -137,8 +166,10 @@ export function useGroupPaneRegistry({
 	onOpenFile: (input: GroupTerminalOpenFileInput) => void;
 }): PaneRegistry<PaneViewerData> {
 	// `roots` is a stable, memoized array from WorkspaceGroupProvider, so the
-	// registry memo depends on it directly.
-	const { groupId, roots } = useWorkspaceGroup();
+	// registry memo depends on it directly. `group` carries `defaultRootId`,
+	// used to pick the combined-agent terminal's stat/open fallback root.
+	const { groupId, group, roots } = useWorkspaceGroup();
+	const defaultRootId = group.defaultRootId;
 
 	return useMemo<PaneRegistry<PaneViewerData>>(() => {
 		const rootsById = new Map<string, ResolvedGroupRoot>(
@@ -152,19 +183,59 @@ export function useGroupPaneRegistry({
 			return { workspaceId, readOnly, groupAddressing };
 		};
 
-		// The workspaceId used to stat a terminal's file-path links: only
-		// `kind: "workspace"` roots have one. Folder roots / combined agent root
-		// (no rootId match) get `null`, so terminal file links there are
-		// non-interactive (statPath is workspaceId-addressed).
-		const resolveStatWorkspaceId = (
+		// The default/first resolvable root, used as the stat + open target for
+		// the combined-agent terminal (which has no `rootId` of its own). The
+		// agent's cwd is the synthetic root spanning every member root, so no
+		// single root is "the" root; we pick the group's default root (else the
+		// first that resolves on disk) as a valid, deterministic
+		// `{ groupId, rootId }` base. Absolute agent-output paths — the dominant
+		// case, exactly what `SUPERSET_ROOTS` advertises — stat host-wide
+		// regardless of which root is passed; relative paths use this root's path
+		// as the join base.
+		const agentFallbackRoot =
+			roots.find((root) => root.rootId === defaultRootId) ??
+			roots.find((root) => root.exists !== false) ??
+			null;
+
+		// Resolve the stat addressing + open-target rootId for a terminal pane's
+		// `rootId`. Threads `groupId` (group context) and the pane's `rootId` into
+		// the shared `{ workspaceId } | { groupId, rootId }` addressing union:
+		//   - `kind: "workspace"` root → `{ workspaceId }` (unchanged).
+		//   - `kind: "folder"` root that resolves → `{ groupId, rootId }`.
+		//   - combined-agent terminal (`rootId` undefined) → the default/first
+		//     resolvable root's `{ groupId, rootId }`.
+		// Anything that can't be resolved → `null` addressing, so the file link
+		// stays non-interactive (graceful fallback, no crash), as before.
+		const resolveTerminalLinkTarget = (
 			rootId: string | undefined,
-		): string | null => {
-			if (!rootId) return null;
-			const root = rootsById.get(rootId) ?? null;
-			if (root && root.kind === "workspace" && root.workspaceId) {
-				return root.workspaceId;
+		): GroupTerminalLinkTarget => {
+			if (!rootId) {
+				// Combined-agent root: route via the fallback root's group addressing.
+				if (!agentFallbackRoot) {
+					return { statAddressing: null, openRootId: null };
+				}
+				return {
+					statAddressing: { groupId, rootId: agentFallbackRoot.rootId },
+					openRootId: agentFallbackRoot.rootId,
+				};
 			}
-			return null;
+			const root = rootsById.get(rootId) ?? null;
+			if (!root || root.exists === false) {
+				return { statAddressing: null, openRootId: null };
+			}
+			if (root.kind === "workspace" && root.workspaceId) {
+				return {
+					statAddressing: { workspaceId: root.workspaceId },
+					openRootId: rootId,
+				};
+			}
+			// Folder root (or a workspace root missing its workspaceId): stat via
+			// group addressing, which `getServiceForRootId` resolves to the root's
+			// real path.
+			return {
+				statAddressing: { groupId, rootId },
+				openRootId: rootId,
+			};
 		};
 
 		// Human label for a terminal's targeting root, shown until the PTY reports
@@ -245,12 +316,18 @@ export function useGroupPaneRegistry({
 					ctx.actions.pin(),
 				onBeforeClose: (pane) => {
 					const data = pane.data as FilePaneData;
-					const { workspaceId, readOnly } = resolveForPane(data);
+					const { workspaceId, readOnly, groupAddressing } =
+						resolveForPane(data);
 					// Read-only panes (unresolvable roots) never become dirty and can
 					// close freely. Editable folder roots fall through to the dirty
 					// check below, exactly like workspace roots (wave-2 M1).
 					if (readOnly) return true;
-					const doc = getDocument(workspaceId, data.filePath);
+					// (wave-2 M2 fix) Thread the pane's group addressing into the dirty
+					// lookup. The document cache keys by `(addressing, absolutePath)`
+					// since M2, so a dirty GROUP-ROOT doc is only found when the matching
+					// `{ groupId, rootId }` is supplied — without it, a dirty folder-root
+					// file would close without the unsaved-changes guard firing.
+					const doc = getDocument(workspaceId, data.filePath, groupAddressing);
 					return !doc?.dirty;
 				},
 				contextMenuActions: (_ctx, defaults) =>
@@ -290,12 +367,15 @@ export function useGroupPaneRegistry({
 				},
 				renderPane: (ctx: RendererContext<PaneViewerData>) => {
 					const data = ctx.pane.data as TerminalPaneData;
+					const { statAddressing, openRootId } = resolveTerminalLinkTarget(
+						data.rootId,
+					);
 					return (
 						<GroupTerminalPane
 							ctx={ctx}
 							terminalId={data.terminalId}
-							rootId={data.rootId ?? null}
-							statWorkspaceId={resolveStatWorkspaceId(data.rootId)}
+							openRootId={openRootId}
+							statAddressing={statAddressing}
 							onOpenFile={onOpenFile}
 						/>
 					);
@@ -306,5 +386,5 @@ export function useGroupPaneRegistry({
 					),
 			},
 		};
-	}, [groupId, roots, onOpenFile]);
+	}, [groupId, defaultRootId, roots, onOpenFile]);
 }

@@ -43,22 +43,31 @@ interface GroupTerminalPaneProps {
 	ctx: RendererContext<PaneViewerData>;
 	terminalId: string;
 	/**
-	 * The specific root this terminal targets, for opening clicked file links
-	 * into that root's editor pane. `null` for the combined agent-root terminal
-	 * (its cwd is the synthetic parent dir spanning every root, which has no
-	 * single owning root), in which case clickable file links are disabled.
+	 * The `rootId` a clicked file link opens its editor pane under. For a
+	 * per-root terminal this is that root's `rootId`; for the combined agent-root
+	 * terminal (whose cwd is the synthetic parent dir spanning every root) it is
+	 * the group's default (or first resolvable) root, chosen by the registry so
+	 * agent-printed paths still open into a real, addressable root. `null` only
+	 * when no root resolves (e.g. an empty group), in which case file links are
+	 * non-interactive.
 	 */
-	rootId: string | null;
+	openRootId: string | null;
 	/**
-	 * The targeting root's underlying `workspaceId`, used to validate (stat)
-	 * file-path links via the existing `filesystem.statPath` procedure (which is
-	 * `workspaceId`-addressed). `null` for `kind: "folder"` roots (no workspaceId)
-	 * and the combined agent root, where file-link stat is disabled. Note that
-	 * `statPath` resolves absolute paths host-wide (not confined to the root), so
-	 * absolute terminal-output paths still resolve for workspace roots; only
-	 * relative-path links depend on the root.
+	 * The addressing used to validate (stat) file-path links via
+	 * `filesystem.statPath` — the shared `{ workspaceId } | { groupId, rootId }`
+	 * union the host procedure accepts (wave-2 M7). `{ workspaceId }` for
+	 * `kind: "workspace"` roots; `{ groupId, rootId }` for folder roots and the
+	 * combined agent root (routed through the host's `getServiceForRootId`).
+	 * `null` when no root resolves, where file-link stat is disabled. Note
+	 * `statPath` resolves ABSOLUTE paths host-wide (not confined to the root), so
+	 * absolute terminal-output paths — the dominant agent case, exactly what
+	 * `SUPERSET_ROOTS` advertises — resolve under any of the group's addressings;
+	 * only relative-path links depend on the specific root's base path.
 	 */
-	statWorkspaceId: string | null;
+	statAddressing:
+		| { workspaceId: string }
+		| { groupId: string; rootId: string }
+		| null;
 	onOpenFile: (input: {
 		rootId: string;
 		filePath: string;
@@ -78,11 +87,14 @@ interface GroupTerminalPaneProps {
  *    keyed purely by terminalId. The session was already created (with its cwd
  *    and `SUPERSET_ROOTS` env) by `useGroupTerminalLauncher` before this pane
  *    mounts.
- *  - File-link `stat` uses the existing `filesystem.statPath` for a
- *    `kind: "workspace"` root (passing that root's `workspaceId`); statPath
- *    resolves absolute terminal-output paths host-wide. Folder roots (no
- *    workspaceId) and the combined agent terminal (`rootId === null`) have
- *    non-interactive file links.
+ *  - File-link `stat` uses `filesystem.statPath` with the pane's
+ *    `statAddressing` — `{ workspaceId }` for a `kind: "workspace"` root, or
+ *    `{ groupId, rootId }` for a folder root / the combined agent root (wave-2
+ *    M7 widened `statPath` to the shared addressing union). statPath resolves
+ *    absolute terminal-output paths host-wide, so agent-printed absolute paths
+ *    are clickable regardless of which member root supplies the addressing.
+ *    Links are only non-interactive when nothing resolves (`statAddressing` /
+ *    `openRootId` are `null`, e.g. an empty group).
  *  - Workspace-scoped niceties (the agent-binding icon, `listSessions`
  *    invalidation, and the per-workspace interrupt/clear run-status tracker) are
  *    intentionally omitted — they key on a `workspaceId` a group terminal lacks.
@@ -90,8 +102,8 @@ interface GroupTerminalPaneProps {
 export function GroupTerminalPane({
 	ctx,
 	terminalId,
-	rootId,
-	statWorkspaceId,
+	openRootId,
+	statAddressing,
 	onOpenFile,
 }: GroupTerminalPaneProps) {
 	const filePolicy = useTerminalFilePolicy();
@@ -199,9 +211,10 @@ export function GroupTerminalPane({
 	}, [terminalId, terminalInstanceId, appearance]);
 
 	// --- Link handlers ---
-	// File stat uses the existing workspaceId-addressed `filesystem.statPath`
-	// for `kind: "workspace"` roots. statPath is a mutation (POST) to avoid tRPC
-	// GET URL-encoding issues with paths containing special characters.
+	// File stat uses `filesystem.statPath` with the pane's `statAddressing`
+	// (`{ workspaceId }` for workspace roots, `{ groupId, rootId }` for folder /
+	// agent roots — wave-2 M7). statPath is a mutation (POST) to avoid tRPC GET
+	// URL-encoding issues with paths containing special characters.
 	const statPathMutation = workspaceTrpc.filesystem.statPath.useMutation();
 	const statPathRef = useRef(statPathMutation.mutateAsync);
 	statPathRef.current = statPathMutation.mutateAsync;
@@ -211,12 +224,13 @@ export function GroupTerminalPane({
 			terminalId,
 			{
 				stat: async (path) => {
-					// No owning workspaceId (folder root / combined agent root): file
-					// links are non-interactive — statPath is workspaceId-addressed.
-					if (!rootId || !statWorkspaceId) return null;
+					// No resolvable root (e.g. empty group): file links are
+					// non-interactive. Otherwise stat via the pane's addressing —
+					// `{ workspaceId }` or `{ groupId, rootId }`.
+					if (!statAddressing) return null;
 					try {
 						const result = await statPathRef.current({
-							workspaceId: statWorkspaceId,
+							...statAddressing,
 							path,
 						});
 						if (!result) return null;
@@ -229,7 +243,7 @@ export function GroupTerminalPane({
 					}
 				},
 				onFileLinkClick: (event, link) => {
-					if (!rootId) return;
+					if (!openRootId) return;
 					if (link.isDirectory) {
 						// Folder reveal in the explorer isn't wired for group terminals;
 						// only file opens are supported. A modifier-less click shows the
@@ -250,7 +264,7 @@ export function GroupTerminalPane({
 					// worktree/project); group terminals open every action ("pane",
 					// "external") into the in-app editor, with "newTab" forcing a new tab.
 					onOpenFile({
-						rootId,
+						rootId: openRootId,
 						filePath: link.resolvedPath,
 						openInNewTab: action === "newTab",
 					});
@@ -286,8 +300,8 @@ export function GroupTerminalPane({
 	}, [
 		terminalId,
 		terminalInstanceId,
-		rootId,
-		statWorkspaceId,
+		openRootId,
+		statAddressing,
 		ctx.store,
 		onOpenFile,
 		onLinkHover,
