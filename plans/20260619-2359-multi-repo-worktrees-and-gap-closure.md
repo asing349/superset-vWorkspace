@@ -56,7 +56,7 @@ This wave keeps the wave-1 discipline: **Strategy A** (compose existing primitiv
 
 ## Progress
 
-- [ ] M1 — Folder-root editing: group-address host write procedures + renderer save path; remove read-only gate for folder roots.
+- [x] (2026-06-20) M1 — Folder-root editing. Host: shared `addressingSchema` ({workspaceId}|{groupId,rootId}) now covers the 5 FS write procs (`writeFile`/`createDirectory`/`deletePath`/`movePath`/`copyPath`), routed via `getServiceForRootId` (`127f926d7`). Renderer: `writeAddressing()` in fileDocumentStore `save()`; folder roots route to the editable `FilePane`, `GroupReadOnlyFilePane` only for `exists:false` (`a48be7b2f`). Pushed. host tests 731 pass / 0 fail, typecheck 28/28, lint clean. NOTE: group-**explorer** mutations (New/Delete/Rename/Move) remain unwired for ALL group roots (pre-existing, not folder-specific) — tracked as a follow-up; editor save is fully working.
 - [ ] M2 — Group correctness fixes: dangling `defaultRootId`; synthetic-dir cleanup on group delete; document-cache addressing key; `prepareAgentRoot` concurrency guard.
 - [ ] M3 — Create-worktree-in-group (existing project) → auto-add as root.
 - [ ] M4 — Repo-folder import/promotion → first-class worktree root.
@@ -76,6 +76,12 @@ Timestamp each item when checked off (e.g. `- [x] (2026-06-20 14:00Z) ...`); spl
 
 - Observation: The agent/shared-context half of "multi-repo, one agent" needs no new code.
   Evidence: `prepare-agent-root.ts` iterates resolved roots regardless of kind; new worktree roots are ordinary `kind:"workspace"` roots and are symlinked + exported in `SUPERSET_ROOTS` automatically.
+
+- (M1 host) The plan's prose named the write procs `writeFile, createEntry, deleteEntry, moveEntry, rename`, but the ACTUAL filesystem router procedures are `writeFile, createDirectory, deletePath, movePath, copyPath` (5 mutating procs). Those were extended. The shared schema is named `addressingSchema` (renamed from wave-1 `readAddressingSchema`); resolver `resolveServiceInput`. It now covers 9 procedures (4 reads incl. `searchContent`, + the 5 writes). `statPath` and `searchFiles` were intentionally left (statPath → M7; searchFiles keeps its own 3-way refine).
+
+- (M1 host, test fixture) On macOS `mkdtempSync` under `tmpdir()` returns a `/var/folders/...` symlink to `/private/var/...`; the FS service realpath-sandbox (`assertRealpathWithinRoot`) makes `deletePath`/`movePath`/`copyPath` reject targets unless the group's stored folder-root path is canonicalized. Host tests using a temp dir as a `kind:"folder"` root must wrap it in `realpathSync(...)`. Test-fixture detail only; not a procedure behavior change.
+
+- (M1 renderer) **Group-explorer file mutations are unwired for the group shell entirely** — `GroupFilesTab`/`useFileTree` are navigation-only and have NO New File/Folder/Delete/Rename/Move actions for ANY root kind (workspace or folder). So folder roots are already at parity with workspace roots inside the group explorer; the folder-vs-workspace disparity M1 targets was specifically the EDITOR read-only gate, now closed. The single-workspace explorer's mutations live in `useFilesTabActions` (`v2-workspace/.../FilesTab/hooks/useFilesTabActions/`, `{workspaceId}`-only). Wiring group-explorer mutations would mean a new group-addressed actions hook mirroring `useFilesTabActions` with `{groupId,rootId}` — pure renderer orchestration (host writes already accept the union). Tracked as a low-priority follow-up; NOT an M1 blocker.
 
 (Add observations as work proceeds.)
 
