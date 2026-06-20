@@ -108,7 +108,11 @@ Timestamp each item when checked off (e.g. `- [x] (2026-06-20 14:00Z) ...`); spl
   Rationale: Consistency and low blast radius; wave 1 proved the seams.
   Date/Author: 2026-06-19, planning session.
 
-- D-Q1..D-Q5 (pending): see Open Questions; defaults recorded there stand unless changed here.
+- D-Q1..D-Q5 (decided 2026-06-20, all at their stated DEFAULTS): Q1 promote = replace folder root (M4); Q2 = renderer two-step (M3); Q3 = reconcile dangling defaultRootId on read, no migration (M2); Q4 = ship minimal content-search panel (M8); Q5 = group delete NEVER deletes worktrees, synthetic dir removed (M2). No deviations from defaults.
+
+- Decision (M6, 2026-06-20): **Relax the "do not modify `packages/workspace-client`" invariant for one minimal, strictly-additive change.** M6's renderer half must dispatch the new `fs:groupEvents` messages and expose `watchFsGroup`/`unwatchFsGroup` on the per-host event-bus handle, which lives in `packages/workspace-client/src/lib/eventBus.ts`. There is no correct alternative: the single multiplexed per-host WebSocket connection lives there, and any out-of-band subscription would open a SECOND connection, violating the stronger wave-1 invariant "exactly one connection per host." The change mirrors the existing `fs:watch`/`fs:events` handlers for the group variant — additive only, no transport rearchitecture, zero change to existing workspace-event behavior. `packages/panes`, `packages/workspace-fs`, and the cloud schema remain fully untouched.
+  Rationale: The deeper invariants (single per-host connection; no engine/transport rewrite; Strategy A) are better served by extending the existing bus than by bypassing it.
+  Date/Author: 2026-06-20, implementation (orchestrator call under "use assumptions, drive to completion").
 
 
 ## Context and Orientation
