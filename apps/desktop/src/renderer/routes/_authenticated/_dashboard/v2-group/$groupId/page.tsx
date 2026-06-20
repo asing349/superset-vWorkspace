@@ -12,6 +12,7 @@ import type {
 } from "../../v2-workspace/$workspaceId/types";
 import { CombinedAgentRootsHint } from "./components/CombinedAgentRootsHint";
 import { GroupAddTabMenu } from "./components/GroupAddTabMenu";
+import { GroupContentSearch } from "./components/GroupContentSearch";
 import { GroupEmptyState } from "./components/GroupEmptyState";
 import { GroupManageButton } from "./components/GroupManageButton";
 import { GroupQuickOpen } from "./components/GroupQuickOpen";
@@ -47,6 +48,7 @@ function V2GroupPage() {
 	const [sidebarWidth, setSidebarWidth] = useState(300);
 	const [isSidebarResizing, setIsSidebarResizing] = useState(false);
 	const [quickOpenOpen, setQuickOpenOpen] = useState(false);
+	const [contentSearchOpen, setContentSearchOpen] = useState(false);
 
 	// Cross-root quick-open (Q4). The handler is scoped to this group page: the
 	// `useHotkey("QUICK_OPEN", …)` binding only lives while this component is
@@ -63,6 +65,31 @@ function V2GroupPage() {
 			// The result's path is already absolute; `openFilePane` stores absolute
 			// paths verbatim (toAbsoluteWorkspacePath is a no-op on absolute input)
 			// and stamps the result's `rootId` so FS reads route to THAT root.
+			openFilePane({
+				filePath: result.absolutePath,
+				rootId: result.rootId,
+			});
+		},
+		[openFilePane],
+	);
+
+	// Cross-root CONTENT search (Q4 / M8). Same scoping discipline as quick-open:
+	// the `SEARCH_IN_FILES` binding only lives while this group page is mounted, and
+	// its chord (meta+shift+f / ctrl+shift+alt+f) doesn't collide with QUICK_OPEN,
+	// the global OPEN_COMMAND_PALETTE, or the "find in X" chords. Suppressed for an
+	// empty group (no roots to search).
+	const openContentSearch = useCallback(() => {
+		if (roots.length > 0) setContentSearchOpen(true);
+	}, [roots.length]);
+	useHotkey("SEARCH_IN_FILES", openContentSearch);
+	const handleContentSearchSelect = useCallback(
+		(result: { absolutePath: string; rootId: string; line: number }) => {
+			// Open the matched file from its root. The result's path is already
+			// absolute and `rootId` routes FS reads to THAT root. Line-number focus on
+			// the editor is NOT wired today (FilePaneData has no focusLine field, and
+			// threading it through the v2-workspace editor view is out of M8 scope), so
+			// we open the file at its top; the user lands on the right file in the
+			// right root.
 			openFilePane({
 				filePath: result.absolutePath,
 				rootId: result.rootId,
@@ -128,6 +155,7 @@ function V2GroupPage() {
 							openFilePane({ filePath, rootId, openInNewTab })
 						}
 						onQuickOpen={openQuickOpen}
+						onContentSearch={openContentSearch}
 					/>
 				</ResizablePanel>
 			)}
@@ -191,11 +219,18 @@ function V2GroupPage() {
 				)}
 			</div>
 			{!isEmptyGroup && (
-				<GroupQuickOpen
-					open={quickOpenOpen}
-					onOpenChange={setQuickOpenOpen}
-					onSelectResult={handleQuickOpenSelect}
-				/>
+				<>
+					<GroupQuickOpen
+						open={quickOpenOpen}
+						onOpenChange={setQuickOpenOpen}
+						onSelectResult={handleQuickOpenSelect}
+					/>
+					<GroupContentSearch
+						open={contentSearchOpen}
+						onOpenChange={setContentSearchOpen}
+						onSelectResult={handleContentSearchSelect}
+					/>
+				</>
 			)}
 		</div>
 	);

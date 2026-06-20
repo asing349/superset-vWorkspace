@@ -1,0 +1,1 @@
+export { GroupContentResultItem } from "./GroupContentResultItem";

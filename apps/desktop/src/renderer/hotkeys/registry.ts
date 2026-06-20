@@ -74,6 +74,22 @@ export const HOTKEYS_REGISTRY = {
 		category: "Navigation",
 		description: "Search and open files in the current workspace",
 	},
+	SEARCH_IN_FILES: {
+		// Distinct from the "Find in X" chords (FOCUS_TASK_SEARCH /
+		// FIND_IN_TERMINAL / FIND_IN_FILE_VIEWER / FIND_IN_CHAT all use
+		// meta+f|ctrl+shift+f) and from QUICK_OPEN / OPEN_COMMAND_PALETTE. Follows
+		// the OPEN_PROJECT/OPEN_PR pattern (meta+shift+X → ctrl+shift+alt+X) so the
+		// Windows/Linux chord doesn't collide with the overloaded ctrl+shift+f.
+		key: {
+			mac: L("meta+shift+f"),
+			windows: L("ctrl+shift+alt+f"),
+			linux: L("ctrl+shift+alt+f"),
+		},
+		label: "Search in Files",
+		category: "Navigation",
+		description:
+			"Search file contents across every root of a multi-root workspace",
+	},
 
 	// Workspace switching
 	JUMP_TO_WORKSPACE_1: {

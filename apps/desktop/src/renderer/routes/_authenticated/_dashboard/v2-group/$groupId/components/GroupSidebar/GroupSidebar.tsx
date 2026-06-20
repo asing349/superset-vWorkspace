@@ -1,6 +1,11 @@
 import { Button } from "@superset/ui/button";
 import { useEffect, useRef, useState } from "react";
-import { LuFile, LuGitCompareArrows, LuSearch } from "react-icons/lu";
+import {
+	LuFile,
+	LuGitCompareArrows,
+	LuSearch,
+	LuTextSearch,
+} from "react-icons/lu";
 import { SidebarHeader } from "../../../../v2-workspace/$workspaceId/components/WorkspaceSidebar/components/SidebarHeader";
 import type { SidebarTabDefinition } from "../../../../v2-workspace/$workspaceId/components/WorkspaceSidebar/types";
 import { GroupChangesTab } from "../GroupChangesTab";
@@ -28,6 +33,8 @@ interface GroupSidebarProps {
 	selectedFilePath?: string;
 	/** Open the cross-root quick-open overlay (also bound to the QUICK_OPEN hotkey). */
 	onQuickOpen: () => void;
+	/** Open the cross-root content-search overlay (also bound to SEARCH_IN_FILES). */
+	onContentSearch: () => void;
 }
 
 /**
@@ -46,6 +53,7 @@ export function GroupSidebar({
 	onSelectFile,
 	selectedFilePath,
 	onQuickOpen,
+	onContentSearch,
 }: GroupSidebarProps) {
 	const [activeTab, setActiveTab] = useState<GroupSidebarTabId>("files");
 
@@ -65,8 +73,9 @@ export function GroupSidebar({
 		return () => ro.disconnect();
 	}, []);
 
-	// The header actions: a cross-root quick-open trigger (the clickable
-	// counterpart to the QUICK_OPEN hotkey) plus the manage action
+	// The header actions: a cross-root quick-open (file-name) trigger and a
+	// cross-root content-search trigger (the clickable counterparts to the
+	// QUICK_OPEN / SEARCH_IN_FILES hotkeys) plus the manage action
 	// (add/remove/reorder/set-default/rename), which refreshes this shell's
 	// `workspaceGroup.get` directly (see GroupManageButton).
 	const headerActions = (
@@ -77,10 +86,21 @@ export function GroupSidebar({
 				size="icon"
 				className="size-7"
 				onClick={onQuickOpen}
-				title="Search files across all roots"
-				aria-label="Search files across all roots"
+				title="Quick open files across all roots"
+				aria-label="Quick open files across all roots"
 			>
 				<LuSearch className="size-4" />
+			</Button>
+			<Button
+				type="button"
+				variant="ghost"
+				size="icon"
+				className="size-7"
+				onClick={onContentSearch}
+				title="Search in files across all roots"
+				aria-label="Search in files across all roots"
+			>
+				<LuTextSearch className="size-4" />
 			</Button>
 			<GroupManageButton variant="icon" />
 		</div>
