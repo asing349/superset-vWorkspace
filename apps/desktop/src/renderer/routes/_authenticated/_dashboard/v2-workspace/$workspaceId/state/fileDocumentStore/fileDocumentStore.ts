@@ -116,6 +116,26 @@ function readAddressing(
 	return entry.groupAddressing ?? { workspaceId: entry.workspaceId };
 }
 
+/**
+ * Build the write addressing for a document, mirroring `readAddressing`. Returns
+ * the `{ groupId, rootId }` form when the entry carries group addressing,
+ * otherwise the `{ workspaceId }` form.
+ *
+ * Wave-2 M1: the host filesystem WRITE procedures (`writeFile`, plus
+ * `createDirectory`/`deletePath`/`movePath`/`copyPath`) now accept the same
+ * `{ workspaceId } | { groupId, rootId }` addressing union the read procedures
+ * use. `kind: "folder"` group roots have NO `workspaceId` (their `workspaceId`
+ * field is only a `folder:<rootId>` document-cache surrogate); their writes MUST
+ * route via `{ groupId, rootId }`, which `groupAddressing` carries. Single-
+ * workspace documents have `groupAddressing === null`, so this returns the exact
+ * `{ workspaceId }` form as before — byte-for-byte identical save path.
+ */
+function writeAddressing(
+	entry: DocumentEntry,
+): { workspaceId: string } | FileDocumentGroupAddressing {
+	return entry.groupAddressing ?? { workspaceId: entry.workspaceId };
+}
+
 async function loadEntry(
 	entry: DocumentEntry,
 	options: { unlimited?: boolean } = {},
@@ -259,7 +279,7 @@ function createHandle(entry: DocumentEntry): SharedFileDocument {
 			notify(entry);
 			try {
 				const result = await client.filesystem.writeFile.mutate({
-					workspaceId: entry.workspaceId,
+					...writeAddressing(entry),
 					absolutePath: entry.absolutePath,
 					content: currentValue,
 					encoding: "utf-8",

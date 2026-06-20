@@ -38,13 +38,18 @@ function getFileName(filePath: string): string {
 /**
  * Resolve the underlying `workspaceId` to use for a file pane's shared document.
  *
- * Per the M2 contract: `kind: "workspace"` roots carry a real `workspaceId`
- * (the document cache key + the workspaceId-only write path). `kind: "folder"`
- * roots have no `workspaceId` — their reads are carried by `{ groupId, rootId }`
- * (group addressing), and writes are NOT yet supported by the host contract.
- * For folder roots we key the document cache by a stable `folder:<rootId>`
- * surrogate so distinct folder-root files don't collide; saves are gated
- * (read-only) below.
+ * - `kind: "workspace"` roots carry a real `workspaceId` (the document cache key
+ *   + the workspaceId-addressed read/write path). Editable. Unchanged.
+ * - `kind: "folder"` roots have NO `workspaceId`. Wave-2 M1 made the host
+ *   filesystem WRITE procedures group-addressable, so a folder root that
+ *   resolves on disk (`exists !== false`) is now EDITABLE through the same
+ *   `FilePane`: reads AND writes route via `{ groupId, rootId }` (group
+ *   addressing, threaded by `FilePane` from `groupId` + the pane's `rootId`).
+ *   We still key the renderer-side document cache by a stable `folder:<rootId>`
+ *   surrogate so distinct folder-root files don't collide.
+ * - A root that does not resolve on disk (`exists === false`) — or an
+ *   unknown/unmatched `rootId` — stays read-only via `GroupReadOnlyFilePane`
+ *   (there is no writable target for it).
  */
 function resolveDocumentWorkspaceId(root: ResolvedGroupRoot | null): {
 	workspaceId: string;
@@ -54,12 +59,15 @@ function resolveDocumentWorkspaceId(root: ResolvedGroupRoot | null): {
 		return { workspaceId: root.workspaceId, readOnly: false };
 	}
 	if (root && root.kind === "folder") {
-		// Folder-root writes are unsupported by the host contract today; reads
-		// route via { groupId, rootId }. The synthetic key only namespaces the
-		// renderer-side document cache.
-		return { workspaceId: `folder:${root.rootId}`, readOnly: true };
+		// Editable when the folder resolves on disk. Group addressing
+		// ({ groupId, rootId }) carries both reads and writes; the synthetic key
+		// only namespaces the renderer-side document cache.
+		return {
+			workspaceId: `folder:${root.rootId}`,
+			readOnly: root.exists === false,
+		};
 	}
-	// Unknown/unresolved root — treat as read-only with a rootId-scoped key.
+	// Unknown/unresolved root — no writable target; render read-only.
 	return {
 		workspaceId: root ? `root:${root.rootId}` : "group-unknown",
 		readOnly: true,
@@ -196,10 +204,11 @@ export function useGroupPaneRegistry({
 					const data = ctx.pane.data as FilePaneData;
 					const { workspaceId, readOnly, groupAddressing } =
 						resolveForPane(data);
-					// Folder roots have no host write path → render read-only (the save
-					// path is never wired). Workspace roots use the editable FilePane:
-					// reads route via { groupId, rootId }; workspaceId is the document
-					// cache key + the workspaceId-only write path.
+					// Editable roots (workspace roots, and — since wave-2 M1 —
+					// resolvable folder roots) render the editable FilePane: reads AND
+					// writes route via the pane's addressing ({ groupId, rootId } for
+					// folder roots, { workspaceId } for workspace roots). Only
+					// genuinely unresolvable roots (exists: false) stay read-only.
 					if (readOnly) {
 						return (
 							<GroupReadOnlyFilePane
@@ -220,8 +229,9 @@ export function useGroupPaneRegistry({
 				renderHeaderExtras: (ctx: RendererContext<PaneViewerData>) => {
 					const data = ctx.pane.data as FilePaneData;
 					const { workspaceId, readOnly } = resolveForPane(data);
-					// Read-only folder-root panes show no editor header extras (view
+					// Unresolvable (read-only) panes show no editor header extras (view
 					// toggles / external-editor open) — they have no editable surface.
+					// Resolvable folder roots are editable (wave-2 M1) and get them.
 					if (readOnly) return null;
 					return (
 						<FilePaneHeaderExtras
@@ -236,8 +246,9 @@ export function useGroupPaneRegistry({
 				onBeforeClose: (pane) => {
 					const data = pane.data as FilePaneData;
 					const { workspaceId, readOnly } = resolveForPane(data);
-					// Folder-root files are read-only (folder writes unsupported by the
-					// host contract), so they never become dirty and can close freely.
+					// Read-only panes (unresolvable roots) never become dirty and can
+					// close freely. Editable folder roots fall through to the dirty
+					// check below, exactly like workspace roots (wave-2 M1).
 					if (readOnly) return true;
 					const doc = getDocument(workspaceId, data.filePath);
 					return !doc?.dirty;
