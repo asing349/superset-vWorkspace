@@ -1,7 +1,11 @@
 import { asc, eq } from "drizzle-orm";
 import type { HostDb } from "../../db/index.ts";
 import { workspaceGroupRoots, workspaceGroups } from "../../db/schema.ts";
-import type { WorkspaceGroupRootInput, WorkspaceGroupStore } from "./store.ts";
+import {
+	reconcileDefaultRootId,
+	type WorkspaceGroupRootInput,
+	type WorkspaceGroupStore,
+} from "./store.ts";
 import type {
 	WorkspaceGroup,
 	WorkspaceGroupRoot,
@@ -40,7 +44,13 @@ function rowToRoot(row: RootRow): WorkspaceGroupRoot {
 }
 
 function buildGroup(group: GroupRow, rootRows: RootRow[]): WorkspaceGroup {
-	return {
+	// Reconcile-on-read (Wave-2 M2, Q3): a `kind:"workspace"` root whose
+	// underlying `workspaces` row is deleted is cascaded out of
+	// `workspace_group_roots` by the FK, but `default_root_id` is plain text with
+	// no self-FK, so it can be left pointing at the removed root. Null it here so
+	// every SQLite read path (get/list/requireGroup → mutation returns) never
+	// surfaces a dangling default.
+	return reconcileDefaultRootId({
 		id: group.id,
 		name: group.name,
 		defaultRootId: group.defaultRootId,
@@ -52,7 +62,7 @@ function buildGroup(group: GroupRow, rootRows: RootRow[]): WorkspaceGroup {
 			position: index,
 		})),
 		createdAt: group.createdAt,
-	};
+	});
 }
 
 function makeRootRow(input: {

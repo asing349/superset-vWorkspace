@@ -155,3 +155,46 @@ function lstatSyncSafe(path: string): boolean {
 		return false;
 	}
 }
+
+/**
+ * Per-group serialization tail (Wave-2 M2). `prepareAgentRoot` reconciles the
+ * synthetic dir by reading the current entries and adding/removing symlinks; two
+ * concurrent runs for the SAME group can interleave those non-atomic fs ops and
+ * race (e.g. one removes a link the other just created). The launcher and
+ * `createSession` deliberately double-invoke the preparer, so this is a real
+ * collision. We keep one in-flight promise per `groupId` and chain the next call
+ * onto its tail, so same-group calls run strictly one after another while
+ * different groups stay fully parallel. The reconcile body itself stays
+ * synchronous; only the entry point is serialized.
+ */
+const inFlightByGroupId = new Map<string, Promise<PrepareAgentRootResult>>();
+
+/**
+ * Serialized entry point for {@link prepareAgentRoot}. Concurrent calls for the
+ * same `groupId` are queued and run one at a time (errors don't poison the
+ * queue); calls for different groups run concurrently. Returns the same
+ * `PrepareAgentRootResult` (`{ agentRootPath, linkedRootNames, skippedRootIds }`)
+ * as the synchronous function.
+ */
+export function prepareAgentRootSerialized(input: {
+	groupId: string;
+	roots: ResolvedWorkspaceGroupRoot[];
+}): Promise<PrepareAgentRootResult> {
+	const previous =
+		inFlightByGroupId.get(input.groupId) ?? Promise.resolve(undefined);
+	// Run after the previous same-group call settles (success OR failure), so one
+	// failed prepare never blocks the queue. `catch(() => {})` only swallows the
+	// PREVIOUS call's rejection for chaining; the previous caller still received
+	// its own rejection from its own returned promise.
+	const next = previous
+		.catch(() => undefined)
+		.then(() => prepareAgentRoot(input));
+	inFlightByGroupId.set(input.groupId, next);
+	// Drop the map entry once this is the tail, so groups don't accumulate.
+	void next.finally(() => {
+		if (inFlightByGroupId.get(input.groupId) === next) {
+			inFlightByGroupId.delete(input.groupId);
+		}
+	});
+	return next;
+}

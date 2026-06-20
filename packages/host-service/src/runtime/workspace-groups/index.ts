@@ -3,6 +3,7 @@ export {
 	getSupersetHomeDir,
 	type PrepareAgentRootResult,
 	prepareAgentRoot,
+	prepareAgentRootSerialized,
 } from "./prepare-agent-root.ts";
 export {
 	WorkspaceGroupResolver,
@@ -11,6 +12,7 @@ export {
 export { createSqliteWorkspaceGroupStore } from "./sqlite-store.ts";
 export {
 	createInMemoryWorkspaceGroupStore,
+	reconcileDefaultRootId,
 	type WorkspaceGroupRootInput,
 	type WorkspaceGroupStore,
 } from "./store.ts";

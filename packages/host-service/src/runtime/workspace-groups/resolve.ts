@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import { eq } from "drizzle-orm";
 import type { HostDb } from "../../db/index.ts";
 import { workspaces } from "../../db/schema.ts";
+import { reconcileDefaultRootId } from "./store.ts";
 import type {
 	ResolvedWorkspaceGroupRoot,
 	WorkspaceGroup,
@@ -64,12 +65,17 @@ export class WorkspaceGroupResolver {
 		createdAt: number;
 		roots: ResolvedWorkspaceGroupRoot[];
 	} {
+		// Reconcile-on-read (Wave-2 M2, Q3): null a `defaultRootId` that no longer
+		// names a live root before resolving, so the router's `get`/`list`/
+		// `prepareAgentRoot` responses never carry a dangling default — even if a
+		// caller hands us a group that bypassed the store read path.
+		const reconciled = reconcileDefaultRootId(group);
 		return {
-			id: group.id,
-			name: group.name,
-			defaultRootId: group.defaultRootId,
-			createdAt: group.createdAt,
-			roots: this.resolveRoots(group.roots),
+			id: reconciled.id,
+			name: reconciled.name,
+			defaultRootId: reconciled.defaultRootId,
+			createdAt: reconciled.createdAt,
+			roots: this.resolveRoots(reconciled.roots),
 		};
 	}
 

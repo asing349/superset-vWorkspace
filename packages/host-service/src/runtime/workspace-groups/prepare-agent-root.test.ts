@@ -13,6 +13,7 @@ import {
 	getGroupAgentRootPath,
 	getSupersetHomeDir,
 	prepareAgentRoot,
+	prepareAgentRootSerialized,
 } from "./prepare-agent-root.ts";
 import type { ResolvedWorkspaceGroupRoot } from "./types.ts";
 
@@ -189,5 +190,83 @@ describe("prepareAgentRoot", () => {
 		const name = result.linkedRootNames[0] as string;
 		expect(name.includes("/")).toBe(false);
 		expect(name.startsWith(".")).toBe(false);
+	});
+
+	describe("prepareAgentRootSerialized (per-group concurrency guard)", () => {
+		it("serializes concurrent same-group calls and converges to the final root set without error", async () => {
+			const pathA = makeTargetDir("conc-a");
+			const pathB = makeTargetDir("conc-b");
+			const pathC = makeTargetDir("conc-c");
+
+			const rootsAB = [
+				makeRoot({ rootId: "a", label: "alpha", rootPath: pathA }),
+				makeRoot({ rootId: "b", label: "beta", rootPath: pathB }),
+			];
+			const rootsAC = [
+				makeRoot({ rootId: "a", label: "alpha", rootPath: pathA }),
+				makeRoot({ rootId: "c", label: "gamma", rootPath: pathC }),
+			];
+
+			// Fire several concurrent prepares for the SAME group with differing root
+			// sets. Without serialization their non-atomic readdir/rm/symlink steps
+			// could interleave and throw (EEXIST / ENOENT) or leave a corrupt dir.
+			const results = await Promise.all([
+				prepareAgentRootSerialized({ groupId: GROUP_ID, roots: rootsAB }),
+				prepareAgentRootSerialized({ groupId: GROUP_ID, roots: rootsAC }),
+				prepareAgentRootSerialized({ groupId: GROUP_ID, roots: rootsAB }),
+				prepareAgentRootSerialized({ groupId: GROUP_ID, roots: rootsAC }),
+			]);
+
+			// Every call resolved (no race-induced rejection) to the same parent dir.
+			const agentRootPath = results[0]?.agentRootPath as string;
+			expect(agentRootPath).toBe(getGroupAgentRootPath(GROUP_ID));
+			for (const r of results) {
+				expect(r.agentRootPath).toBe(agentRootPath);
+			}
+
+			// The last-enqueued call (rootsAC) wins; the dir converges to exactly its
+			// links, with valid symlinks pointing at the right targets.
+			expect(linkNames(agentRootPath)).toEqual(["alpha", "gamma"]);
+			expect(readlinkSync(join(agentRootPath, "alpha"))).toBe(pathA);
+			expect(readlinkSync(join(agentRootPath, "gamma"))).toBe(pathC);
+			expect(lstatSync(join(agentRootPath, "alpha")).isSymbolicLink()).toBe(
+				true,
+			);
+		});
+
+		it("runs different groups in parallel into distinct synthetic dirs", async () => {
+			const otherGroup = "group-other";
+			const pathA = makeTargetDir("par-a");
+			const pathOther = makeTargetDir("par-other");
+
+			const goodA = makeRoot({ rootId: "a", label: "alpha", rootPath: pathA });
+			const goodOther = makeRoot({
+				rootId: "o",
+				label: "omega",
+				rootPath: pathOther,
+			});
+
+			const [resA, resOther] = await Promise.all([
+				prepareAgentRootSerialized({ groupId: GROUP_ID, roots: [goodA] }),
+				prepareAgentRootSerialized({ groupId: otherGroup, roots: [goodOther] }),
+			]);
+
+			// Different groups get distinct synthetic dirs and both succeed (they are
+			// not serialized against each other).
+			expect(resA.agentRootPath).toBe(getGroupAgentRootPath(GROUP_ID));
+			expect(resOther.agentRootPath).toBe(getGroupAgentRootPath(otherGroup));
+			expect(resA.agentRootPath).not.toBe(resOther.agentRootPath);
+			expect(linkNames(resA.agentRootPath)).toEqual(["alpha"]);
+			expect(linkNames(resOther.agentRootPath)).toEqual(["omega"]);
+
+			// A subsequent same-group call still works after the queue has drained
+			// (the map entry is cleaned up rather than leaking).
+			const again = await prepareAgentRootSerialized({
+				groupId: GROUP_ID,
+				roots: [goodA],
+			});
+			expect(again.agentRootPath).toBe(getGroupAgentRootPath(GROUP_ID));
+			expect(linkNames(again.agentRootPath)).toEqual(["alpha"]);
+		});
 	});
 });

@@ -3,7 +3,7 @@ import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { getSupervisor, waitForDaemonReady } from "../../../daemon";
 import { terminalSessions, workspaces } from "../../../db/schema";
-import { prepareAgentRoot } from "../../../runtime/workspace-groups";
+import { prepareAgentRootSerialized } from "../../../runtime/workspace-groups";
 import {
 	countTerminalSessions,
 	createTerminalSessionInternal,
@@ -85,10 +85,10 @@ type CreateSessionInput = z.infer<typeof createSessionBaseSchema>;
  * `TerminalRootTarget` (an absolute rootPath, plus every root path for
  * SUPERSET_ROOTS when launching the combined agent root).
  */
-function resolveRootTarget(
+async function resolveRootTarget(
 	ctx: HostServiceContext,
 	input: z.infer<typeof rootTargetSchema>,
-): TerminalRootTarget {
+): Promise<TerminalRootTarget> {
 	const group = ctx.workspaceGroupStore.get(input.groupId);
 	if (!group) {
 		throw new TRPCError({
@@ -102,7 +102,9 @@ function resolveRootTarget(
 		.map((root) => root.rootPath);
 
 	if (input.agentRoot) {
-		const { agentRootPath } = prepareAgentRoot({
+		// Serialized per group: createSession and the launcher both prepare the
+		// same agent root, so concurrent reconciliations must not interleave.
+		const { agentRootPath } = await prepareAgentRootSerialized({
 			groupId: group.id,
 			roots: resolved.roots,
 		});
@@ -134,7 +136,7 @@ async function createTerminalSessionFromInput({
 }) {
 	const terminalId = input.terminalId ?? crypto.randomUUID();
 	const rootTarget = input.rootTarget
-		? resolveRootTarget(ctx, input.rootTarget)
+		? await resolveRootTarget(ctx, input.rootTarget)
 		: undefined;
 	const result = await createTerminalSessionInternal({
 		terminalId,

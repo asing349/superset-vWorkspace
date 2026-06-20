@@ -206,6 +206,67 @@ describe("createSqliteWorkspaceGroupStore", () => {
 		expect(store.get(created.id)?.name).toBe("with-workspace");
 	});
 
+	it("reconcile-on-read: a workspace-root cascade that drops the default leaves defaultRootId null on get/list/resolve", () => {
+		db.insert(schema.projects)
+			.values({ id: PROJECT_ID, repoPath: "/tmp/repo" })
+			.run();
+		db.insert(schema.workspaces)
+			.values({
+				id: WORKSPACE_B,
+				projectId: PROJECT_ID,
+				worktreePath: "/tmp/worktree-b",
+				branch: "main",
+			})
+			.run();
+
+		const created = store.create({
+			name: "with-default",
+			roots: [
+				{
+					kind: "workspace",
+					workspaceId: WORKSPACE_B,
+					folderPath: null,
+					label: "Workspace B",
+				},
+			],
+		});
+		const workspaceRootId = created.roots[0]?.rootId as string;
+
+		// Point the group's default at the workspace root.
+		store.setDefaultRoot({ id: created.id, rootId: workspaceRootId });
+		expect(store.get(created.id)?.defaultRootId).toBe(workspaceRootId);
+
+		// Delete the underlying workspace row: the FK cascades the ROOT out of
+		// workspace_group_roots, but default_root_id is plain text (no self-FK), so
+		// the raw column is left DANGLING (still pointing at the removed rootId).
+		db.delete(schema.workspaces)
+			.where(eq(schema.workspaces.id, WORKSPACE_B))
+			.run();
+		const rawRow = db
+			.select()
+			.from(schema.workspaceGroups)
+			.where(eq(schema.workspaceGroups.id, created.id))
+			.get();
+		expect(rawRow?.defaultRootId).toBe(workspaceRootId); // genuinely dangling on disk
+		expect(db.select().from(schema.workspaceGroupRoots).all()).toHaveLength(0); // root really cascaded away
+
+		// get / list reconcile the dangling pointer to null.
+		const fetched = store.get(created.id);
+		expect(fetched?.roots).toHaveLength(0);
+		expect(fetched?.defaultRootId).toBeNull();
+		expect(
+			store.list().find((g) => g.id === created.id)?.defaultRootId,
+		).toBeNull();
+
+		// resolveGroup (the router's get/list/prepareAgentRoot path) also nulls it.
+		const resolver = new WorkspaceGroupResolver({ db });
+		const group = store.get(created.id);
+		if (!group) {
+			throw new Error("expected group to exist");
+		}
+		expect(resolver.resolveGroup(group).defaultRootId).toBeNull();
+	});
+
 	it("rename and unknown-id lookups behave like the in-memory store", () => {
 		const created = store.create({ name: "old", roots: [] });
 		const renamed = store.rename({ id: created.id, name: "new" });

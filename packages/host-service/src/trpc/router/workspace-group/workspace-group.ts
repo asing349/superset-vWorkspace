@@ -1,7 +1,9 @@
+import { rmSync } from "node:fs";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import {
-	prepareAgentRoot,
+	getGroupAgentRootPath,
+	prepareAgentRootSerialized,
 	type WorkspaceGroup,
 	type WorkspaceGroupRootInput,
 } from "../../../runtime/workspace-groups";
@@ -162,6 +164,15 @@ export const workspaceGroupRouter = router({
 		.input(z.object({ id: z.string() }))
 		.mutation(({ ctx, input }) => {
 			ctx.workspaceGroupStore.delete(input.id);
+			// Best-effort cleanup of the synthetic agent-root dir
+			// (`~/.superset/group-roots/<id>/`). It holds only symlinks, so removing
+			// it never touches the real worktrees/folders the links point at (Q5:
+			// group delete must NEVER delete worktrees). `force: true` makes this a
+			// no-op when the dir was never prepared.
+			rmSync(getGroupAgentRootPath(input.id), {
+				recursive: true,
+				force: true,
+			});
 			return { id: input.id };
 		}),
 
@@ -175,7 +186,7 @@ export const workspaceGroupRouter = router({
 	 */
 	prepareAgentRoot: protectedProcedure
 		.input(z.object({ groupId: z.string() }))
-		.mutation(({ ctx, input }) => {
+		.mutation(async ({ ctx, input }) => {
 			const group = ctx.workspaceGroupStore.get(input.groupId);
 			if (!group) {
 				throw new TRPCError({
@@ -184,7 +195,10 @@ export const workspaceGroupRouter = router({
 				});
 			}
 			const resolved = resolveGroup(ctx, group);
-			const { agentRootPath } = prepareAgentRoot({
+			// Serialized per group: the launcher + createSession deliberately
+			// double-invoke this, and concurrent same-group calls would race the
+			// symlink reconciliation. Different groups still run in parallel.
+			const { agentRootPath } = await prepareAgentRootSerialized({
 				groupId: group.id,
 				roots: resolved.roots,
 			});

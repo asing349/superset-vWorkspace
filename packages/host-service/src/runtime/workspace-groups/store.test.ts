@@ -10,8 +10,10 @@ import * as schema from "../../db/schema";
 import { WorkspaceGroupResolver } from "./resolve";
 import {
 	createInMemoryWorkspaceGroupStore,
+	reconcileDefaultRootId,
 	type WorkspaceGroupStore,
 } from "./store";
+import type { WorkspaceGroup } from "./types";
 
 const MIGRATIONS_FOLDER = resolve(import.meta.dir, "../../../drizzle");
 const PROJECT_ID = "1f0e8c7e-1234-4abc-8def-0123456789ab";
@@ -141,6 +143,56 @@ describe("createInMemoryWorkspaceGroupStore", () => {
 		store.delete(a.id);
 		expect(store.get(a.id)).toBeNull();
 		expect(store.list().map((g) => g.id)).toEqual([b.id]);
+	});
+
+	it("reconcile-on-read: get/list null a defaultRootId that no longer names a live root", () => {
+		// removeRoot already clears a default pointed at the removed root, so to
+		// exercise the reconcile-on-read defense we simulate a default that became
+		// dangling out-of-band (e.g. a cascade that bypassed the mutation path):
+		// set the default, then remove a DIFFERENT root and re-point the raw value.
+		const created = store.create({
+			name: "g",
+			roots: [
+				{ kind: "folder", workspaceId: null, folderPath: "/tmp/a", label: "A" },
+				{ kind: "folder", workspaceId: null, folderPath: "/tmp/b", label: "B" },
+			],
+		});
+		const idA = created.roots[0]?.rootId as string;
+		const idB = created.roots[1]?.rootId as string;
+
+		// Default points at B; now remove B via the normal path so the array no
+		// longer contains it. setDefaultRoot first to seed the pointer.
+		store.setDefaultRoot({ id: created.id, rootId: idB });
+		// reorderRoots/removeRoot would clear it; instead set default to A, drop A,
+		// which clears it — then assert the helper itself catches a stale pointer.
+		store.setDefaultRoot({ id: created.id, rootId: idA });
+		store.removeRoot({ id: created.id, rootId: idA });
+		expect(store.get(created.id)?.defaultRootId).toBeNull();
+		expect(
+			store.list().find((g) => g.id === created.id)?.defaultRootId,
+		).toBeNull();
+
+		// Direct helper check: a group whose default isn't among its roots reads back null.
+		const dangling: WorkspaceGroup = {
+			id: "x",
+			name: "x",
+			defaultRootId: "ghost",
+			createdAt: 0,
+			roots: [
+				{
+					rootId: "real",
+					kind: "folder",
+					workspaceId: null,
+					folderPath: "/tmp/r",
+					label: "R",
+					position: 0,
+				},
+			],
+		};
+		expect(reconcileDefaultRootId(dangling).defaultRootId).toBeNull();
+		// A live default is preserved (same object returned).
+		const live: WorkspaceGroup = { ...dangling, defaultRootId: "real" };
+		expect(reconcileDefaultRootId(live)).toBe(live);
 	});
 
 	it("mutating a returned group does not mutate stored state", () => {

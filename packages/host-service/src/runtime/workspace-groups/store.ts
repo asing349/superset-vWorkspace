@@ -30,6 +30,26 @@ export interface WorkspaceGroupStore {
 }
 
 /**
+ * Reconcile-on-read defense (Wave-2 M2, Q3 default): a group's `defaultRootId`
+ * may point at a root that is no longer present (e.g. its underlying workspace
+ * row was deleted, cascading the root out of the group via SQLite FK without
+ * touching `default_root_id`). When the pointer doesn't correspond to a live
+ * root, treat it as `null` so `get`/`list`/`resolve` never surface a dangling
+ * default. Returns the same group when nothing needs fixing, otherwise a copy
+ * with `defaultRootId: null`. Shared by every store/resolver read path so the
+ * rule can't diverge.
+ */
+export function reconcileDefaultRootId(group: WorkspaceGroup): WorkspaceGroup {
+	if (
+		group.defaultRootId !== null &&
+		!group.roots.some((root) => root.rootId === group.defaultRootId)
+	) {
+		return { ...group, defaultRootId: null };
+	}
+	return group;
+}
+
+/**
  * Re-stamp `position` to match array order. The store keeps roots in a plain
  * array and treats the array index as the canonical ordering, so every
  * mutation that changes the array re-normalizes positions through here.
@@ -93,11 +113,13 @@ export function createInMemoryWorkspaceGroupStore(): WorkspaceGroupStore {
 
 		get(id) {
 			const group = groups.get(id);
-			return group ? cloneGroup(group) : null;
+			return group ? reconcileDefaultRootId(cloneGroup(group)) : null;
 		},
 
 		list() {
-			return Array.from(groups.values()).map(cloneGroup);
+			return Array.from(groups.values()).map((group) =>
+				reconcileDefaultRootId(cloneGroup(group)),
+			);
 		},
 
 		rename({ id, name }) {
