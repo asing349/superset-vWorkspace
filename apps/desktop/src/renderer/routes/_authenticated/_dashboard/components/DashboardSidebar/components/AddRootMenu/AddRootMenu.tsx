@@ -7,12 +7,18 @@ import {
 } from "@superset/ui/dropdown-menu";
 import { toast } from "@superset/ui/sonner";
 import { useState } from "react";
-import { LuFolderPlus, LuLayers, LuPlus } from "react-icons/lu";
+import {
+	LuFolderPlus,
+	LuGitBranchPlus,
+	LuLayers,
+	LuPlus,
+} from "react-icons/lu";
 import { getBaseName } from "renderer/lib/pathBasename";
 import type { AddableWorkspace } from "../../hooks/useAddableWorkspaces";
 import { useSelectFolderRoot } from "../../hooks/useSelectFolderRoot";
 import type { WorkspaceGroupRootInput } from "../../hooks/useWorkspaceGroups";
 import { AddExistingWorkspaceDialog } from "../AddExistingWorkspaceDialog";
+import { CreateWorktreeDialog } from "../CreateWorktreeDialog";
 
 interface AddRootMenuProps {
 	/** Workspace ids already present, hidden from the "existing workspace" picker. */
@@ -30,10 +36,14 @@ interface AddRootMenuProps {
  *  2. "Add folder" — opens the native folder picker (same IPC the existing
  *     folder-first import uses) → emits
  *     `{ kind: "folder", workspaceId: null, folderPath, label }`.
+ *  3. "Create new worktree" (Wave-2 M3) — opens a compact picker that creates a
+ *     fresh branch worktree in an imported project (host `workspaces.create`),
+ *     then emits the resulting `{ kind: "workspace", workspaceId, ... }` root.
  *
  * It only builds the root input and hands it to `onAddRoot`; the caller decides
  * whether to call `workspaceGroup.addRoot` (manage dialog) or accumulate it as
- * an initial root (create dialog).
+ * an initial root (create dialog). All three sources funnel through the SAME
+ * `onAddRoot` contract.
  */
 export function AddRootMenu({
 	existingWorkspaceIds,
@@ -43,6 +53,7 @@ export function AddRootMenu({
 }: AddRootMenuProps) {
 	const { selectFolder } = useSelectFolderRoot();
 	const [workspaceDialogOpen, setWorkspaceDialogOpen] = useState(false);
+	const [worktreeDialogOpen, setWorktreeDialogOpen] = useState(false);
 
 	const handleAddFolder = async () => {
 		try {
@@ -92,6 +103,10 @@ export function AddRootMenu({
 					</Button>
 				</DropdownMenuTrigger>
 				<DropdownMenuContent align="start">
+					<DropdownMenuItem onSelect={() => setWorktreeDialogOpen(true)}>
+						<LuGitBranchPlus className="mr-2 size-4" />
+						Create new worktree
+					</DropdownMenuItem>
 					<DropdownMenuItem onSelect={() => setWorkspaceDialogOpen(true)}>
 						<LuLayers className="mr-2 size-4" />
 						Add existing workspace
@@ -102,6 +117,12 @@ export function AddRootMenu({
 					</DropdownMenuItem>
 				</DropdownMenuContent>
 			</DropdownMenu>
+
+			<CreateWorktreeDialog
+				open={worktreeDialogOpen}
+				onOpenChange={setWorktreeDialogOpen}
+				onAddRoot={onAddRoot}
+			/>
 
 			<AddExistingWorkspaceDialog
 				open={workspaceDialogOpen}
