@@ -4,6 +4,8 @@ export {
 	type AgentIdentity,
 	type AgentLifecyclePayload,
 	type EventBusHandle,
+	type FsGroupAddress,
+	type FsGroupEventsPayload,
 	type GitChangedPayload,
 	getEventBus,
 	type PortChangedPayload,

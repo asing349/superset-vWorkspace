@@ -1,7 +1,12 @@
 import { workspaceTrpc } from "@superset/workspace-client";
-import type { FsEntry, FsEntryKind } from "@superset/workspace-fs/client";
+import type {
+	FsEntry,
+	FsEntryKind,
+	FsWatchEvent,
+} from "@superset/workspace-fs/client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useWorkspaceEvent } from "../useWorkspaceEvent";
+import { useWorkspaceGroupEvent } from "../useWorkspaceGroupEvent";
 
 export interface FileTreeNode {
 	absolutePath: string;
@@ -402,21 +407,20 @@ export function useFileTree(params: UseFileTreeParams): UseFileTreeResult {
 
 	// Live tree updates from filesystem events.
 	//
-	// `kind: "workspace"` roots have a real `workspaceId` and subscribe to that
-	// workspace's `fs:events` stream (the existing single-root behaviour, and the
-	// only form the event bus understands today — it filters events by
-	// `workspaceId`). `kind: "folder"` group roots have no `workspaceId`, so the
-	// subscription stays disabled for them: the tree still loads and refreshes on
-	// demand (toggle/refresh), it just doesn't auto-update on external disk
-	// changes.
+	// The per-event tree-refresh handling is identical regardless of addressing;
+	// only the SUBSCRIPTION differs by root kind:
 	//
-	// TODO(M4-followup): add a `{ groupId, rootId }`-addressed fs-events stream on
-	// the host + event bus so folder roots get live updates too. Deferred because
-	// it requires a host-service change (out of M4's renderer scope).
-	useWorkspaceEvent(
-		"fs:events",
-		workspaceId ?? "",
-		(event) => {
+	// - `kind: "workspace"` roots have a real `workspaceId` and subscribe to that
+	//   workspace's `fs:events` stream (`useWorkspaceEvent`, unchanged).
+	// - `kind: "folder"` group roots (no `workspaceId`) subscribe to the
+	//   group-addressed `fs:groupEvents` stream for their `{ groupId, rootId }`
+	//   (`useWorkspaceGroupEvent`, Wave-2 M6). The host emits the SAME
+	//   `FsWatchEvent[]` payload on both channels, so the handler is shared.
+	//
+	// Both subscriptions are mounted unconditionally (rules of hooks) and each is
+	// gated by `enabled`, so exactly one is live per tree per its addressing.
+	const handleFsEvent = useCallback(
+		(event: FsWatchEvent) => {
 			if (!rootPath) {
 				return;
 			}
@@ -500,7 +504,24 @@ export function useFileTree(params: UseFileTreeParams): UseFileTreeResult {
 				void loadDirectory(parentPath, { force: true });
 			}
 		},
+		[rootPath, refreshAll, loadDirectory, updateState],
+	);
+
+	// `kind: "workspace"` roots: workspace-keyed `fs:events`.
+	useWorkspaceEvent(
+		"fs:events",
+		workspaceId ?? "",
+		handleFsEvent,
 		Boolean(workspaceId && rootPath),
+	);
+
+	// `kind: "folder"` group roots: group-addressed `fs:groupEvents` (Wave-2 M6).
+	// Resolves the TODO(M4-followup) — folder roots now live-refresh too.
+	useWorkspaceGroupEvent(
+		"fs:groupEvents",
+		{ groupId: groupId ?? "", rootId: rootId ?? "" },
+		handleFsEvent,
+		Boolean(groupId && rootId && rootPath),
 	);
 
 	const rootEntries = useMemo(() => {
