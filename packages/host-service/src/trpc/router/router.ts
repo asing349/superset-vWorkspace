@@ -20,6 +20,7 @@ import { settingsRouter } from "./settings";
 import { terminalRouter } from "./terminal";
 import { terminalAgentsRouter } from "./terminal-agents";
 import { ticketContextRouter } from "./ticket-context";
+import { ticketRunRouter } from "./ticket-run";
 import { workspaceRouter } from "./workspace";
 import { workspaceCleanupRouter } from "./workspace-cleanup";
 import { workspaceCreationRouter } from "./workspace-creation";
@@ -48,6 +49,7 @@ export const appRouter = router({
 	terminal: terminalRouter,
 	terminalAgents: terminalAgentsRouter,
 	ticketContext: ticketContextRouter,
+	ticketRun: ticketRunRouter,
 	workspace: workspaceRouter,
 	workspaces: workspacesRouter,
 	workspaceGroup: workspaceGroupRouter,

@@ -421,3 +421,43 @@ export const approvedTicketContext = sqliteTable(
 		),
 	],
 );
+
+/**
+ * Ticket→PR orchestrator run rows (B5) — ONE row per repo-run (a multi-repo
+ * ticket fans out to N rows, all sharing `taskId`). Mirrors the cloud
+ * `automation_runs` shape locally (cloud schema stays frozen): a row is inserted
+ * `dispatching`, advanced to `dispatched` (with the created `workspaceId` +
+ * `branch`) on success, or `failed` (with `error`) on a per-repo failure — a
+ * partial multi-repo failure is recorded per-row, never a global throw.
+ * `taskId`/`projectId` carry the cloud task + the host project; there is NO FK
+ * on `taskId` (cloud `tasks` is not mirrored host-side). The orchestrator stops
+ * at PR creation and NEVER merges.
+ */
+export const ticketRuns = sqliteTable(
+	"ticket_runs",
+	{
+		id: text().primaryKey(),
+		// CLOUD task id (Linear-synced `tasks.id`). No FK (cloud table not mirrored).
+		taskId: text("task_id").notNull(),
+		projectId: text("project_id")
+			.notNull()
+			.references(() => projects.id, { onDelete: "cascade" }),
+		// 'dispatching' → 'dispatched' (success) | 'failed' (per-repo failure).
+		status: text().notNull().default("dispatching"),
+		workspaceId: text("workspace_id"),
+		branch: text(),
+		prUrl: text("pr_url"),
+		error: text(),
+		createdAt: integer("created_at")
+			.notNull()
+			.$defaultFn(() => Date.now()),
+		updatedAt: integer("updated_at")
+			.notNull()
+			.$defaultFn(() => Date.now()),
+	},
+	(table) => [
+		index("ticket_runs_task_id_idx").on(table.taskId),
+		index("ticket_runs_project_id_idx").on(table.projectId),
+		index("ticket_runs_status_idx").on(table.status),
+	],
+);
