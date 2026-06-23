@@ -16,6 +16,17 @@ export const terminalSessions = sqliteTable(
 			{ onDelete: "set null" },
 		),
 		status: text().notNull().default("active"),
+		// Respawn durability for workspace-LESS group/folder sessions (Wave-4 A3).
+		// A `kind:"folder"` / combined-agent-root session has no `workspaces` row,
+		// so after a host restart a dead PTY could only be ADOPTED, never respawned.
+		// These columns persist exactly the `TerminalRootTarget` + cwd needed to
+		// relaunch the same shell at the same root. NULL for normal workspace
+		// sessions (which already respawn from their worktree) and harmless when
+		// stale — the relaunch re-validates the path and degrades to "open a new
+		// terminal" if it's gone.
+		rootPath: text("root_path"),
+		groupRootPathsJson: text("group_root_paths_json"),
+		cwd: text(),
 		createdAt: integer("created_at")
 			.notNull()
 			.$defaultFn(() => Date.now()),

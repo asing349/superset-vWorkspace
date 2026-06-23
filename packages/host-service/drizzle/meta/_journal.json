@@ -64,6 +64,13 @@
       "when": 1782229672372,
       "tag": "0008_ticket_context",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1782230184036,
+      "tag": "0009_terminal_session_respawn",
+      "breakpoints": true
     }
   ]
 }

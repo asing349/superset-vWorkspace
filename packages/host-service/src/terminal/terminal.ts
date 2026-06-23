@@ -810,6 +810,43 @@ export interface TerminalRootTarget {
 	groupRootPaths?: string[];
 }
 
+/**
+ * Wave-4 A3: rebuild the respawn inputs for a workspace-LESS group/folder
+ * session from its persisted `terminalSessions` row. Returns `null` when the row
+ * carries no stored `rootPath` (a pre-A3 row, or a workspace session), so the
+ * caller falls back to the "open a new terminal" dead-end. Pure (no I/O) so the
+ * mapping — including a malformed `groupRootPathsJson` — is unit-testable.
+ */
+export function rebuildRespawnTargetFromRow(row: {
+	rootPath: string | null;
+	groupRootPathsJson: string | null;
+	cwd: string | null;
+}): { rootTarget: TerminalRootTarget; cwd: string | undefined } | null {
+	if (!row.rootPath) return null;
+	let groupRootPaths: string[] | undefined;
+	if (row.groupRootPathsJson) {
+		try {
+			const parsed: unknown = JSON.parse(row.groupRootPathsJson);
+			if (
+				Array.isArray(parsed) &&
+				parsed.every((p): p is string => typeof p === "string")
+			) {
+				groupRootPaths = parsed;
+			}
+		} catch {
+			// Malformed JSON → treat as no group roots (still respawnable as a
+			// single-root session). Never throw on a recovery path.
+			groupRootPaths = undefined;
+		}
+	}
+	return {
+		rootTarget: groupRootPaths
+			? { rootPath: row.rootPath, groupRootPaths }
+			: { rootPath: row.rootPath },
+		cwd: row.cwd ?? undefined,
+	};
+}
+
 interface CreateTerminalSessionOptions {
 	terminalId: string;
 	/**
@@ -1083,11 +1120,31 @@ export async function createTerminalSessionInternal({
 
 	const createdAt = Date.now();
 
+	// Wave-4 A3: persist the respawn target for workspace-LESS group/folder
+	// sessions so a dead PTY can be relaunched (not only adopted) after a host
+	// restart. We only have the real root paths/cwd on a fresh spawn from a
+	// `rootTarget` — an adopted session reuses the live PTY and never re-derives
+	// them, so leave the stored values untouched on adoption. Workspace sessions
+	// store nulls (they respawn from their worktree row).
+	const respawnTarget =
+		!isAdopted && rootTarget
+			? {
+					rootPath: rootTarget.rootPath,
+					groupRootPathsJson: rootTarget.groupRootPaths
+						? JSON.stringify(rootTarget.groupRootPaths)
+						: null,
+					cwd,
+				}
+			: null;
+
 	db.insert(terminalSessions)
 		.values({
 			id: terminalId,
 			originWorkspaceId: resolvedWorkspaceId,
 			status: "active",
+			rootPath: respawnTarget?.rootPath ?? null,
+			groupRootPathsJson: respawnTarget?.groupRootPathsJson ?? null,
+			cwd: respawnTarget?.cwd ?? null,
 			createdAt,
 		})
 		.onConflictDoUpdate({
@@ -1095,6 +1152,16 @@ export async function createTerminalSessionInternal({
 			set: {
 				originWorkspaceId: resolvedWorkspaceId,
 				status: "active",
+				// Only overwrite the stored respawn target on a fresh rootTarget
+				// spawn; on adoption `respawnTarget` is null and we KEEP whatever the
+				// prior lifetime persisted (so the row stays respawnable).
+				...(respawnTarget
+					? {
+							rootPath: respawnTarget.rootPath,
+							groupRootPathsJson: respawnTarget.groupRootPathsJson,
+							cwd: respawnTarget.cwd,
+						}
+					: {}),
 				createdAt,
 				endedAt: null,
 			},
@@ -1419,12 +1486,27 @@ export function registerWorkspaceTerminalRoute({
 				// Active row but daemon no longer owns the PTY (laptop sleep,
 				// daemon restart, machine reboot). A workspace session can be
 				// respawned from its worktree; a workspace-less group/folder
-				// session has no recoverable cwd in the DB row (that lives in M7's
-				// durable store), so dead-end it with a clear message instead.
+				// session is respawned from the root path/cwd persisted on its row
+				// (Wave-4 A3). Pre-A3 rows (or any row missing `rootPath`) have no
+				// recoverable target, so those still dead-end with a clear message.
 				if (!recordWorkspaceId) {
-					return {
-						error: `Terminal session "${terminalId}" can no longer be restored; please open a new terminal.`,
-					};
+					const respawn = rebuildRespawnTargetFromRow(record);
+					if (!respawn) {
+						return {
+							error: `Terminal session "${terminalId}" can no longer be restored; please open a new terminal.`,
+						};
+					}
+					console.log(
+						`[terminal] respawning lost group/folder session ${terminalId}`,
+					);
+					return createTerminalSessionInternal({
+						terminalId,
+						rootTarget: respawn.rootTarget,
+						cwd: respawn.cwd,
+						themeType,
+						db,
+						eventBus,
+					});
 				}
 				console.log(`[terminal] respawning lost session ${terminalId}`);
 				return createTerminalSessionInternal({
