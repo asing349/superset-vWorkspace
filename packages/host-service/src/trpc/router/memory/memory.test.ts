@@ -8,7 +8,10 @@ import { migrate } from "drizzle-orm/bun-sqlite/migrator";
 import type { HostDb } from "../../../db/index.ts";
 import * as schema from "../../../db/schema";
 import { projects, workspaces } from "../../../db/schema";
-import { ProjectIndexService } from "../../../runtime/memory";
+import {
+	MemoryRetrieveService,
+	ProjectIndexService,
+} from "../../../runtime/memory";
 import type { HostServiceContext } from "../../../types";
 import { memoryRouter } from "./memory";
 
@@ -85,6 +88,7 @@ describe("memoryRouter (B1 CRUD)", () => {
 			git: async () => fakeGit(),
 			runtime: {
 				memoryIndex: new ProjectIndexService({ db }),
+				memoryRetrieve: new MemoryRetrieveService({ db }),
 			},
 		} as unknown as HostServiceContext;
 		return memoryRouter.createCaller(ctx);
@@ -229,15 +233,44 @@ describe("memoryRouter (B1 CRUD)", () => {
 		expect(idx.lastIndexedAt).toBeNull();
 	});
 
-	it("remaining stubs return typed not-implemented shapes without throwing", async () => {
+	it("consolidatePractice stub returns a typed not-implemented shape", async () => {
 		const c = caller();
 		const consolidate = await c.consolidatePractice({
 			scope: "project",
 			projectId,
 		});
 		expect(consolidate.milestone).toBe("B5");
-		const retrieved = await c.retrieve({ projectId, intent: "x" });
-		expect(retrieved.implemented).toBe(false);
-		expect(retrieved.playbooks).toEqual([]);
+	});
+
+	it("retrieve assembles a bundle from captured + confirmed playbooks", async () => {
+		const c = caller();
+		const p = await c.capture({
+			projectId,
+			intent: "add a backend route",
+			touchedPaths: ["packages/host-service/src/foo.ts"],
+			commands: ["bun test"],
+		});
+		await c.confirm({ id: p.id });
+
+		const bundle = await c.retrieve({
+			projectId,
+			intent: "work on the backend route",
+		});
+		expect(bundle.queryAreas).toContain("backend");
+		expect(bundle.playbooks.some((b) => b.id === p.id)).toBe(true);
+		expect(typeof bundle.estimatedTokens).toBe("number");
+	});
+
+	it("savedStats computes a percentage from recorded telemetry", async () => {
+		const c = caller();
+		await c.telemetry.record({
+			projectId,
+			metric: "tokens",
+			baselineValue: 1000,
+			observedValue: 600,
+		});
+		const stats = await c.savedStats({ projectId });
+		const tokens = stats.find((s) => s.metric === "tokens");
+		expect(tokens?.savedPercent).toBe(40);
 	});
 });

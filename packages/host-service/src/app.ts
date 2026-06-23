@@ -18,6 +18,7 @@ import { createGitFactory } from "./runtime/git";
 import { runMainWorkspaceSweep } from "./runtime/main-workspace-sweep";
 import {
 	IndexRefreshWatcher,
+	MemoryRetrieveService,
 	ProjectIndexService,
 	reconcilePlaybooksForPr,
 } from "./runtime/memory";
@@ -136,6 +137,8 @@ export function createApp(options: CreateAppOptions): CreateAppResult {
 		gitWatcher,
 	});
 	indexRefreshWatcher.start();
+	// Superset Memory (B4): retrieval-bundle assembly + token-savings telemetry.
+	const memoryRetrieve = new MemoryRetrieveService({ db });
 	const chatRuntime =
 		options.chatRuntime ??
 		new ChatRuntimeManager({
@@ -153,6 +156,7 @@ export function createApp(options: CreateAppOptions): CreateAppResult {
 		filesystem,
 		pullRequests: pullRequestRuntime,
 		memoryIndex,
+		memoryRetrieve,
 	};
 	const app = new Hono();
 	const { injectWebSocket, upgradeWebSocket } = createNodeWebSocket({ app });

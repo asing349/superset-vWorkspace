@@ -11,5 +11,7 @@ export * from "./fingerprint";
 export * from "./path-to-area";
 export * from "./ranking";
 export * from "./redaction";
+export * from "./retrieval";
 export * from "./structural-map";
+export * from "./telemetry";
 export * from "./types";

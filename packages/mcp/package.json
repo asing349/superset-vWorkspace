@@ -15,6 +15,10 @@
 		"./in-memory": {
 			"types": "./src/in-memory.ts",
 			"default": "./src/in-memory.ts"
+		},
+		"./memory": {
+			"types": "./src/memory/index.ts",
+			"default": "./src/memory/index.ts"
 		}
 	},
 	"scripts": {

@@ -12,6 +12,7 @@ import {
 	pathsToAreas,
 	redactAll,
 	redactText,
+	type SavedStat,
 } from "@superset/memory";
 import { TRPCError } from "@trpc/server";
 import { and, desc, eq } from "drizzle-orm";
@@ -27,6 +28,7 @@ import {
 	ensureMemoryRootDir,
 	gatherChangedFiles,
 	type ProjectIndexStatus,
+	type RetrieveResult,
 } from "../../../runtime/memory";
 import { protectedProcedure, queryProcedure, router } from "../../index";
 
@@ -619,18 +621,52 @@ export const memoryRouter = router({
 			return ctx.runtime.memoryIndex.listEntries(input.projectId);
 		}),
 
-	/** STUB — B4 (retrieval): assemble the memory bundle for an intent. */
+	/**
+	 * B4 — assemble the high-signal memory bundle for the current intent:
+	 * project+global Coding Practice, top-k area-filtered Playbooks, and
+	 * Project-Index slices, capped to a token budget (lowest-ranked trimmed
+	 * first). Records a `retrieval_tokens` telemetry sample. This is the same
+	 * bundle the local memory MCP server returns over `memory.search`.
+	 */
 	retrieve: queryProcedure
 		.input(
 			z.object({
 				projectId: z.string().nullable().default(null),
 				intent: z.string().default(""),
 				areaTags: z.array(areaTagSchema).default([]),
-				topK: z.number().int().min(1).max(50).default(5),
+				topKPlaybooks: z.number().int().min(1).max(50).default(5),
+				topKIndexSlices: z.number().int().min(1).max(50).default(10),
+				maxTokens: z.number().int().min(100).max(20000).default(2000),
+				includeProvisional: z.boolean().default(false),
 			}),
 		)
-		.query((): NotImplemented & { playbooks: Playbook[] } => ({
-			...notImplemented("B4"),
-			playbooks: [],
-		})),
+		.query(({ ctx, input }): RetrieveResult => {
+			return ctx.runtime.memoryRetrieve.retrieve({
+				projectId: input.projectId,
+				intent: input.intent,
+				areaTags: input.areaTags,
+				topKPlaybooks: input.topKPlaybooks,
+				topKIndexSlices: input.topKIndexSlices,
+				maxTokens: input.maxTokens,
+				includeProvisional: input.includeProvisional,
+			});
+		}),
+
+	/**
+	 * B4 — the "memory saved ~X%" stat the Memory panel surfaces, computed from
+	 * recorded telemetry samples (per metric: tokens, exploration_steps, …).
+	 */
+	savedStats: queryProcedure
+		.input(
+			z.object({
+				projectId: z.string().nullable().default(null),
+				limit: z.number().int().min(1).max(2000).default(500),
+			}),
+		)
+		.query(({ ctx, input }): SavedStat[] => {
+			return ctx.runtime.memoryRetrieve.savedStats({
+				projectId: input.projectId,
+				limit: input.limit,
+			});
+		}),
 });

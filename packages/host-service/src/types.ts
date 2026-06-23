@@ -7,7 +7,10 @@ import type { EventBus } from "./events";
 import type { ChatRuntimeManager } from "./runtime/chat";
 import type { WorkspaceFilesystemManager } from "./runtime/filesystem";
 import type { GitCredentialProvider, GitFactory } from "./runtime/git";
-import type { ProjectIndexService } from "./runtime/memory";
+import type {
+	MemoryRetrieveService,
+	ProjectIndexService,
+} from "./runtime/memory";
 import type { PullRequestRuntimeManager } from "./runtime/pull-requests";
 import type {
 	WorkspaceGroupResolver,
@@ -25,6 +28,8 @@ export interface HostServiceRuntime {
 	pullRequests: PullRequestRuntimeManager;
 	/** Lightweight per-project structural + lexical index (Superset Memory B3). */
 	memoryIndex: ProjectIndexService;
+	/** Retrieval-bundle assembly + telemetry stats (Superset Memory B4). */
+	memoryRetrieve: MemoryRetrieveService;
 }
 
 export interface HostServiceContext {
