@@ -67,8 +67,8 @@ Part A — gap closure:
 - [x] (2026-06-22) A1 — Group explorer file mutations (New/Rename/Delete/Move) for all group roots, via `{groupId,rootId}` writes. New `useGroupFilesTabActions` (writeFile/createDirectory/movePath/deletePath, `{workspaceId}` for workspace roots / `{groupId,rootId}` for folder roots); right-click context menu + inline rename on `GroupFileTreeRow`; New File/New Folder header buttons + root-level create placeholder + delete-confirm on `GroupFileTreeSection`; new `GroupTreeInlineInput`; pure `groupTreePaths` helpers (+tests). Live-refresh via existing fs:events/fs:groupEvents (no manual refetch). Commit `4f4459f6d`. Gates: typecheck 28/28, lint 0, groupTreePaths 11/11, v2-group suite 31/31.
 - [x] (2026-06-22) A2 — Fixed stale "folder roots can't be edited yet" banner → "this root is currently unavailable" + doc comment in `GroupReadOnlyFilePane`; removed stale `TODO(group-content-search)` comment in `useGroupFileSearch`. `grep -rn "can't be edited yet|TODO(group-content-search)" apps/desktop/src/renderer` → clean. Commit `46a2eaaac`. typecheck 28/28, lint 0.
 - [x] (2026-06-22) A3 — Content-search focuses the matched line on open. Added `focusLine`/`focusColumn`/`focusTick` to `FilePaneData` (mirrors `DiffPaneData`); threaded `openFilePane` (re-stamps an already-open pane via `setPaneData`) → `FilePane` → `ViewProps` → `CodeView` (rAF effect → `CodeEditorAdapter.revealPosition`). Group content-search select now passes `result.line`/`column` (was discarded). Quick-open is file-name-only (no line info) → unchanged. Single-workspace unaffected (focus fields undefined → no-op). Commit `f2877ec35`. typecheck 28/28, lint 0, v2-group 31/31.
-- [ ] A4 — `workspace-client` event-bus test harness (covers the wave-2 additive group-fs changes incl. the `maybeCleanupConnection` widening + reconnect re-send).
-- [ ] A5 — Execute + record the wave-1/2 interactive end-to-end acceptance (human handoff; optional Electron e2e-driver spike).
+- [x] (2026-06-22) A4 — `workspace-client` event-bus test harness. First tests for the package (added a `test` script + `bun-types`; tsconfig `types: ["node","bun-types"]`). `eventBus.test.ts` (9 tests) covers watchFsGroup/unwatchFsGroup ref-counting, onFsGroup dispatch, the `maybeCleanupConnection` widening (group-fs listener keeps the connection alive), reconnect re-send of group+workspace watches, and that existing workspace methods/dispatch are unchanged. MockWebSocket stub; non-`/hosts/` URLs make `primeRelayAffinity` a no-op (no fetch). Commit `525003514`. `bun test packages/workspace-client` → 9/0; typecheck 28/28; lint 0; turbo now discovers the task.
+- [x] (2026-06-22) A5 — Interactive end-to-end recorded in **Outcomes & Retrospective**: the wave-1/2 acceptance written as a step-by-step checklist (with the NEW A1 explorer-mutation step + A3 line-focus step); auto-verified everything checkable without the GUI (typecheck 28/28, lint 0, host-service 757/0 incl. the on-disk `{groupId,rootId}` write proof `filesystem-group-writes` 9/0, workspace-fs 41/0, workspace-client 9/0, v2-group+v2-workspace 127/0, production electron-vite bundle builds exit 0); flagged steps 1–9 as a human handoff (dev sign-in + native pickers + agent launch can't be driven headlessly); added a time-boxed Playwright-electron evaluation (recorded as a future follow-up, no production code). Pre-existing env-only renderer failures (`appearance`, `useOrderedSections`) confirmed NOT touched by Part A.
 
 Part B — Superset Memory (local):
 - [ ] B1 — Memory data model + `packages/memory` + host `memory` router; path→area mapping; redaction.
@@ -91,6 +91,10 @@ Timestamp each item when checked off; split partials into done/remaining.
   Evidence: `GroupFilesTab/components/GroupFileTreeSection` + `GroupFileTreeRow` (recursive, non-Pierre); host write procs already group-addressable (`addressingSchema` in `packages/host-service/src/trpc/router/filesystem/filesystem.ts`).
 
 - (env) No shared `TaskUpdate`/`TaskList` tool is exposed in the finisher agent's toolset (only `TaskStop`/`SendMessage`/`EnterWorktree`). The shared task-board updates described in the per-milestone workflow could not be performed; this plan's living sections + per-milestone commits are the durable progress record instead.
+
+- (A4) `packages/workspace-client` had no test infra at all (no `test` script, not in turbo's `test` pipeline). A4 added the first one: a `test` script (`bun test --pass-with-no-tests`) + a `bun-types` devDep + `tsconfig` `types: ["node","bun-types"]` (so `bun:test` resolves while keeping node globals for the source). The eventBus connects eagerly on `getEventBus`, but using non-`/hosts/` URLs makes `primeRelayAffinity` a no-op (it only `fetch`es `/hosts/<id>/*`), so the tests only need a `globalThis.WebSocket` stub, not a `fetch` mock. turbo now discovers `@superset/workspace-client#test`.
+
+- (A5) The on-disk `{groupId,rootId}` write behavior A1 depends on was ALREADY covered by an integration test (`packages/host-service/test/integration/filesystem-group-writes.integration.test.ts`, 9 cases) from wave-2 M1 — so A5's "exercise the host FS write procs to prove on-disk create/rename/delete/move for a {groupId,rootId} target" was satisfied by running that suite rather than writing a new ad-hoc script.
 
 (Add observations as work proceeds.)
 
@@ -310,7 +314,52 @@ No cloud schema change. New: `packages/memory` (types + path→area + redaction 
 
 ## Outcomes & Retrospective
 
-To be filled in at completion. Compare against the Purpose: multi-root is genuinely finished (explorer mutations, line-focus, tested event bus, and an actually-run end-to-end), and Superset Memory captures successful tasks at PR time, indexes the project lightly (semantically if a local model is present), feeds memory back via MCP to make runs cheaper and more consistent, consolidates durable practice at two scopes under user review, and renders a local knowledge graph — all local, additive, and egress-free.
+### Part A — completion (2026-06-22)
+
+All five Part-A milestones (A1–A5) landed on `claude/keen-euler-e9b3x8`, pushed per-milestone:
+- **A1** `4f4459f6d` — group explorer New/Rename/Delete/Move for all roots via `{groupId,rootId}` writes.
+- **A2** `46a2eaaac` — corrected stale "folder roots can't be edited yet" banner/doc + removed `TODO(group-content-search)`.
+- **A3** `f2877ec35` — content-search hits focus the matched line (focusLine/focusColumn threaded → `CodeEditorAdapter.revealPosition`).
+- **A4** `525003514` — `workspace-client` event-bus test harness (9 tests).
+- **A5** — this section (E2E checklist + auto-verification + human handoff).
+
+Part-A standing gates at completion (all GREEN): `bun run typecheck` 28/28; `bun run lint` exit 0; per-package tests — host-service **757 pass / 0 fail / 8 todo (765)**, workspace-fs **41/0**, workspace-client **9/0** (new), v2-group + v2-workspace renderer areas **127/0**; production **electron-vite bundle builds** (renderer + main + preload, exit 0).
+
+### A5 — Interactive end-to-end: auto-verification + human handoff
+
+The wave-1/2 interactive GUI acceptance was never run (it requires a human at the running Electron app: dev sign-in, native folder pickers, clicking through the UI, launching a real agent). An agent cannot drive that headlessly. A5 therefore (1) writes the script as an explicit checklist, (2) auto-verifies everything checkable without the GUI, and (3) records the remainder as a human handoff.
+
+#### (1) Step-by-step E2E checklist (run by a human; from the wave-2 "Validation and Acceptance" + wave-3 A1/A3 additions)
+
+1. `bun dev`; sign in as dev (per `DEVELOPMENT.md`).
+2. Create a multi-root workspace. **Add two directories that are different git repos** via "Add folder → Set up & create worktree" (wave-2 M4). Both become editable, worktree-capable roots.
+3. From the group, **create a fresh worktree (new branch) in each repo** (wave-2 M3). Each appears as a root with its own Changes panel.
+4. **Add one plain (non-repo) folder.** Open a file in it; edit + save — confirm on disk (wave-2 M1). Change it from an external terminal — confirm the tree/editor **live-refresh** (wave-2 M6).
+5. **[NEW — A1] In EACH root (workspace AND folder): from the explorer, create a file, create a folder, rename one, move/rename a nested entry, and delete one** — via the per-section New File / New Folder header buttons and the row right-click context menu (Rename / Delete; New File / New Folder on directories). Expected: every op lands on disk (verify in a terminal) and the tree live-updates with no manual refresh.
+6. Open files from both repos in one editor; edit + save each; confirm each lands in the correct worktree on the correct branch.
+7. **Launch the combined agent**; `ls -la` the synthetic root shows every current root (wave-2 M5). Ask it to read a file unique to each repo and edit in each; confirm. **Click a path** in its terminal output — opens in the editor (wave-2 M7).
+8. Run a **cross-root content search** (wave-2 M8); matches from both repos appear, labeled per root. **[NEW — A3] Click a match — the file opens in the correct root scrolled to and with the cursor on the matched line/column** (re-clicking the same hit re-scrolls).
+9. Quit and relaunch; the group, roots, and worktrees persist (wave-1 SQLite). Delete the group; confirm the worktrees survive and the `group-roots/<id>` synthetic dir is removed (wave-2 M2/Q5).
+
+#### (2) Auto-verified without the GUI (PASS)
+
+- **typecheck** `bun run typecheck` → 28/28. **lint** `bun run lint` → exit 0 (the renderer `noRestrictedImports` Node-import rule is part of this; new renderer files grep-clean of `node:*`/host imports).
+- **Full relevant test suites:** host-service **757/0** (+8 todo), workspace-fs **41/0**, workspace-client **9/0** (A4), v2-group + v2-workspace renderer **127/0**, A1 `groupTreePaths` 11/0.
+- **On-disk `{groupId,rootId}` write proof (the A1 substrate, scriptable without the GUI):** the existing integration test `packages/host-service/test/integration/filesystem-group-writes.integration.test.ts` exercises the host FS write procs against a real on-disk **folder root** addressed by `{groupId, rootId}` and asserts `writeFile` (incl. base64), `createDirectory`, `deletePath`, `movePath` (rename), and `copyPath` all land on disk, that writes stay sandboxed to the root, that an unknown `rootId` is rejected, and that the `{workspaceId}` form is unchanged — **9/0**. This is exactly the create/rename/delete/move that A1's explorer drives; A1 is renderer orchestration over this proven host path.
+- **Production bundle:** `electron-vite build` (the renderer+main+preload compile inside `compile:app`) → **exit 0**, so all Part-A renderer changes compile into the shipping bundle.
+- **Pre-existing, environment-limited failures (NOT Part A):** running the *entire* renderer suite (`bun test apps/desktop/src/renderer`) reports failures only in `lib/terminal/appearance/appearance.test.ts` and `screens/main/.../useOrderedSections/useOrderedSections.test.tsx` — they fail on a missing Electron preload (`Could not find electronTRPC global`) and the absence of a real canvas / `FontFaceSet` in the headless runner. Neither file is touched by any Part-A commit (`git diff 7abf4e95e..HEAD` does not include them); they are the same class of env-only failure the wave-2 plan documented. CI runs `turbo test` per-package (isolated), where the Part-A packages are green.
+
+#### (3) Human handoff — GUI-only steps that remain
+
+Checklist steps **1–9 above require a human** at the running Electron app (dev sign-in + native folder pickers + clicking through + launching a real agent). They are NOT executable headlessly by the agent. The structural correctness of each is backed by the unit/integration tests + the production bundle build listed in (2); the A1 explorer-mutation host path is additionally proven on-disk by `filesystem-group-writes.integration.test.ts`. **Action for a human reviewer:** run steps 1–9, paying special attention to the two NEW behaviors — **(5)** explorer create/rename/delete/move in BOTH a workspace root and a folder root, and **(8)** content-search line-focus on open — and file any discrepancy as a follow-up.
+
+#### Optional spike — Playwright-electron e2e driver (time-boxed evaluation, no production change)
+
+Evaluated, not built. `@playwright/test`'s `_electron.launch({ args: [appMain] })` can drive a packaged Electron app and would give a repeatable smoke test for steps 5/8. Blockers that make it a separate, non-trivial follow-up (out of A5's scope): (a) it needs the **dev sign-in** flow automated or a test-auth bypass (the app gates on Clerk auth before any group route mounts); (b) the **native folder picker** (`window.selectDirectory` Electron IPC) must be stubbed to return fixture repo paths, since Playwright can't drive the OS file dialog; (c) it needs a deterministic **fixture host-service** with seeded projects/worktrees on a temp `SUPERSET_HOME_DIR`. None of these are blockers for shipping Part A (the host write path + bundle are proven), so a Playwright-electron smoke harness is recorded here as a recommended future follow-up rather than added now.
+
+### Part B — to be filled in as B1–B7 land.
+
+Compare against the Purpose: multi-root is genuinely finished (explorer mutations, line-focus, tested event bus, and an auto-verified-plus-human-handoff end-to-end), and Superset Memory captures successful tasks at PR time, indexes the project lightly (semantically if a local model is present), feeds memory back via MCP to make runs cheaper and more consistent, consolidates durable practice at two scopes under user review, and renders a local knowledge graph — all local, additive, and egress-free.
 
 
 ## Future (explicitly out of scope this wave)
