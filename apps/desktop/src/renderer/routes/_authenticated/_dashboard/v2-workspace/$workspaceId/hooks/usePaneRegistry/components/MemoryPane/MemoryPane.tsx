@@ -7,6 +7,8 @@ import { PlaybookDetail } from "./components/PlaybookDetail";
 import { PlaybookList } from "./components/PlaybookList";
 import { PracticeActions } from "./components/PracticeActions";
 import { PracticeSection } from "./components/PracticeSection";
+import { SettingsSection } from "./components/SettingsSection";
+import { useEmbeddingsSettings } from "./hooks/useEmbeddingsSettings";
 import { useMemoryGraph } from "./hooks/useMemoryGraph";
 import { useMemoryPanel } from "./hooks/useMemoryPanel";
 import { usePracticeConsolidation } from "./hooks/usePracticeConsolidation";
@@ -47,11 +49,15 @@ export function MemoryPane({
 
 	const setSection = useCallback(
 		(next: MemorySection) => {
-			// Persist only sections the data type supports today (playbooks +
-			// practice + graph); B7 widens `MemoryPaneData.section`.
-			// `isEnabledSection` guards against persisting a not-yet-shipped section.
+			// `isEnabledSection` guards against persisting a not-yet-shipped section;
+			// the explicit list keeps it in lockstep with `MemoryPaneData.section`.
 			if (!isEnabledSection(next)) return;
-			if (next !== "playbooks" && next !== "practice" && next !== "graph") {
+			if (
+				next !== "playbooks" &&
+				next !== "practice" &&
+				next !== "graph" &&
+				next !== "settings"
+			) {
 				return;
 			}
 			updateData({ ...data, section: next });
@@ -95,6 +101,7 @@ export function MemoryPane({
 
 	const consolidation = usePracticeConsolidation({ projectId });
 	const graph = useMemoryGraph({ projectId });
+	const embeddings = useEmbeddingsSettings({ projectId });
 
 	return (
 		<div className="flex h-full min-h-0 w-full flex-col bg-background">
@@ -140,6 +147,11 @@ export function MemoryPane({
 						onSelectPlaybook={openPlaybookFromGraph}
 						onOpenFile={onOpenFile}
 					/>
+				</div>
+			) : null}
+			{section === "settings" ? (
+				<div className="min-h-0 flex-1">
+					<SettingsSection embeddings={embeddings} />
 				</div>
 			) : null}
 		</div>

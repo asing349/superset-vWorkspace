@@ -102,16 +102,15 @@ export interface CommentPaneData {
 }
 
 /**
- * Superset Memory panel (B4b/B5/B6). One pane per workspace surfaces the local
- * memory layer: the token-savings stat, the Playbook browser, consolidation
- * (B5 "practice"), the knowledge graph (B6 "graph"), and (later) the embeddings
- * toggle (B7). `section` selects which sub-tab is active so the pane is
- * extensible without a rewrite; `selectedPlaybookId` remembers the open
- * Playbook detail.
+ * Superset Memory panel (B4b/B5/B6/B7b). One pane per workspace surfaces the
+ * local memory layer: the token-savings stat, the Playbook browser,
+ * consolidation (B5 "practice"), the knowledge graph (B6 "graph"), and the
+ * optional embeddings toggle (B7b "settings"). `section` selects which sub-tab
+ * is active; `selectedPlaybookId` remembers the open Playbook detail.
  */
 export interface MemoryPaneData {
-	/** Active section/sub-tab. playbooks + practice + graph today; B7 adds more. */
-	section?: "playbooks" | "practice" | "graph";
+	/** Active section/sub-tab: playbooks + practice + graph + settings. */
+	section?: "playbooks" | "practice" | "graph" | "settings";
 	/** The Playbook whose detail is open, if any. */
 	selectedPlaybookId?: string | null;
 }

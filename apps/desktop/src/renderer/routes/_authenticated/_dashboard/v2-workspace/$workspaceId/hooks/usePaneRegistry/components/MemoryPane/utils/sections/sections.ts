@@ -5,9 +5,9 @@
  *   - B4b ships "playbooks" (enabled).
  *   - B5 ships "practice" (consolidation review — enabled).
  *   - B6 ships "graph" (knowledge graph — enabled).
- *   - B7 adds "settings" (the embeddings toggle).
- * The disabled placeholder is kept here to document the intended shape and to
- * keep the type stable as milestones land.
+ *   - B7b ships "settings" (the embeddings toggle — enabled).
+ * All four sections are now shipped; new sections add an entry here + a body
+ * branch in `MemoryPane`, no header/layout rewrite.
  */
 
 export type MemorySection = "playbooks" | "practice" | "graph" | "settings";
@@ -25,7 +25,7 @@ export const MEMORY_SECTIONS: readonly MemorySectionDef[] = [
 	{ id: "playbooks", label: "Playbooks", enabled: true, milestone: "B4b" },
 	{ id: "practice", label: "Practice", enabled: true, milestone: "B5" },
 	{ id: "graph", label: "Graph", enabled: true, milestone: "B6" },
-	{ id: "settings", label: "Settings", enabled: false, milestone: "B7" },
+	{ id: "settings", label: "Settings", enabled: true, milestone: "B7b" },
 ];
 
 /** The default (first enabled) section. */

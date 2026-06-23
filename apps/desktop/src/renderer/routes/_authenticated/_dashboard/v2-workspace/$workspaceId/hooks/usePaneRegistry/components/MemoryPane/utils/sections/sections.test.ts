@@ -7,18 +7,17 @@ import {
 } from "./sections";
 
 describe("memory sections", () => {
-	it("ships playbooks + practice + graph enabled and reserves later milestones as disabled", () => {
+	it("ships all four sections enabled (B4b/B5/B6/B7b)", () => {
 		expect(MEMORY_SECTIONS.find((s) => s.id === "playbooks")?.enabled).toBe(
 			true,
 		);
-		// B5: practice; B6: graph.
 		expect(MEMORY_SECTIONS.find((s) => s.id === "practice")?.enabled).toBe(
 			true,
 		);
 		expect(MEMORY_SECTIONS.find((s) => s.id === "graph")?.enabled).toBe(true);
-		// Settings (B7) remains a disabled placeholder (the extensibility seam).
+		// B7b: settings (embeddings toggle) is now enabled.
 		expect(MEMORY_SECTIONS.find((s) => s.id === "settings")?.enabled).toBe(
-			false,
+			true,
 		);
 	});
 
@@ -29,13 +28,14 @@ describe("memory sections", () => {
 	it("recognizes only enabled sections", () => {
 		expect(isEnabledSection("playbooks")).toBe(true);
 		expect(isEnabledSection("graph")).toBe(true);
-		expect(isEnabledSection("settings")).toBe(false);
+		expect(isEnabledSection("settings")).toBe(true);
 		expect(isEnabledSection("nonsense")).toBe(false);
 	});
 
-	it("resolves stale/disabled/missing sections to the default", () => {
+	it("resolves stale/missing sections to the default", () => {
 		expect(resolveSection("playbooks")).toBe("playbooks");
-		expect(resolveSection("settings")).toBe("playbooks");
+		expect(resolveSection("settings")).toBe("settings");
+		expect(resolveSection("nonsense")).toBe("playbooks");
 		expect(resolveSection(null)).toBe("playbooks");
 		expect(resolveSection(undefined)).toBe("playbooks");
 	});
