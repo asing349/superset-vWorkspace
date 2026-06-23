@@ -33,3 +33,7 @@ export {
 	type RetrieveResult,
 } from "./retrieve-service.ts";
 export { extractSymbols } from "./symbol-extractor.ts";
+export {
+	MemoryVaultService,
+	type RegenerateVaultResult,
+} from "./vault-service.ts";

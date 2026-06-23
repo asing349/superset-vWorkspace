@@ -580,7 +580,11 @@ export function usePaneRegistry({
 				getIcon: () => <Brain className="size-3.5" />,
 				getTitle: () => "Memory",
 				renderPane: (ctx: RendererContext<PaneViewerData>) => (
-					<MemoryPane context={ctx} projectId={workspace.projectId} />
+					<MemoryPane
+						context={ctx}
+						projectId={workspace.projectId}
+						onOpenFile={(path) => onOpenFile(path)}
+					/>
 				),
 				contextMenuActions: (_ctx, defaults) =>
 					defaults.map((d) =>

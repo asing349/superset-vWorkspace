@@ -10,6 +10,7 @@ import type { GitCredentialProvider, GitFactory } from "./runtime/git";
 import type {
 	MemoryConsolidationService,
 	MemoryRetrieveService,
+	MemoryVaultService,
 	ProjectIndexService,
 } from "./runtime/memory";
 import type { PullRequestRuntimeManager } from "./runtime/pull-requests";
@@ -33,6 +34,8 @@ export interface HostServiceRuntime {
 	memoryRetrieve: MemoryRetrieveService;
 	/** Coding-Practice consolidation: propose/accept/revert (Superset Memory B5). */
 	memoryConsolidation: MemoryConsolidationService;
+	/** Obsidian vault generation + knowledge-graph data (Superset Memory B6). */
+	memoryVault: MemoryVaultService;
 }
 
 export interface HostServiceContext {

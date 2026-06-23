@@ -1,11 +1,13 @@
 import type { RendererContext } from "@superset/panes";
 import { useCallback } from "react";
 import type { MemoryPaneData, PaneViewerData } from "../../../../types";
+import { GraphSection } from "./components/GraphSection";
 import { MemoryPanelHeader } from "./components/MemoryPanelHeader";
 import { PlaybookDetail } from "./components/PlaybookDetail";
 import { PlaybookList } from "./components/PlaybookList";
 import { PracticeActions } from "./components/PracticeActions";
 import { PracticeSection } from "./components/PracticeSection";
+import { useMemoryGraph } from "./hooks/useMemoryGraph";
 import { useMemoryPanel } from "./hooks/useMemoryPanel";
 import { usePracticeConsolidation } from "./hooks/usePracticeConsolidation";
 import {
@@ -18,6 +20,8 @@ interface MemoryPaneProps {
 	context: RendererContext<PaneViewerData>;
 	/** v2 project this pane's memory is scoped to (`workspace.projectId`). */
 	projectId: string;
+	/** Open a touched file from a graph node (best-effort; repo-relative path). */
+	onOpenFile?: (path: string) => void;
 }
 
 /**
@@ -30,7 +34,11 @@ interface MemoryPaneProps {
  * state (active section + selected playbook) lives in the pane's own data, so it
  * survives tab switches and restores with the workspace.
  */
-export function MemoryPane({ context, projectId }: MemoryPaneProps) {
+export function MemoryPane({
+	context,
+	projectId,
+	onOpenFile,
+}: MemoryPaneProps) {
 	const data = context.pane.data as MemoryPaneData;
 	const section = resolveSection(data.section);
 	const selectedPlaybookId = data.selectedPlaybookId ?? null;
@@ -40,10 +48,12 @@ export function MemoryPane({ context, projectId }: MemoryPaneProps) {
 	const setSection = useCallback(
 		(next: MemorySection) => {
 			// Persist only sections the data type supports today (playbooks +
-			// practice); B6/B7 widen `MemoryPaneData.section`. `isEnabledSection`
-			// guards against persisting a not-yet-shipped section.
+			// practice + graph); B7 widens `MemoryPaneData.section`.
+			// `isEnabledSection` guards against persisting a not-yet-shipped section.
 			if (!isEnabledSection(next)) return;
-			if (next !== "playbooks" && next !== "practice") return;
+			if (next !== "playbooks" && next !== "practice" && next !== "graph") {
+				return;
+			}
 			updateData({ ...data, section: next });
 		},
 		[data, updateData],
@@ -52,6 +62,15 @@ export function MemoryPane({ context, projectId }: MemoryPaneProps) {
 	const setSelected = useCallback(
 		(id: string | null) => {
 			updateData({ ...data, selectedPlaybookId: id });
+		},
+		[data, updateData],
+	);
+
+	// Clicking a playbook node in the graph jumps to the Playbooks section with
+	// that playbook open.
+	const openPlaybookFromGraph = useCallback(
+		(id: string) => {
+			updateData({ ...data, section: "playbooks", selectedPlaybookId: id });
 		},
 		[data, updateData],
 	);
@@ -75,6 +94,7 @@ export function MemoryPane({ context, projectId }: MemoryPaneProps) {
 	);
 
 	const consolidation = usePracticeConsolidation({ projectId });
+	const graph = useMemoryGraph({ projectId });
 
 	return (
 		<div className="flex h-full min-h-0 w-full flex-col bg-background">
@@ -111,6 +131,15 @@ export function MemoryPane({ context, projectId }: MemoryPaneProps) {
 			{section === "practice" ? (
 				<div className="min-h-0 flex-1">
 					<PracticeSection consolidation={consolidation} />
+				</div>
+			) : null}
+			{section === "graph" ? (
+				<div className="min-h-0 flex-1">
+					<GraphSection
+						graph={graph}
+						onSelectPlaybook={openPlaybookFromGraph}
+						onOpenFile={onOpenFile}
+					/>
 				</div>
 			) : null}
 		</div>

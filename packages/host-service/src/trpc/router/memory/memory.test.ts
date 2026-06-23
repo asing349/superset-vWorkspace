@@ -11,6 +11,7 @@ import { projects, workspaces } from "../../../db/schema";
 import {
 	MemoryConsolidationService,
 	MemoryRetrieveService,
+	MemoryVaultService,
 	ProjectIndexService,
 } from "../../../runtime/memory";
 import type { HostServiceContext } from "../../../types";
@@ -95,6 +96,7 @@ describe("memoryRouter (B1 CRUD)", () => {
 				memoryIndex: new ProjectIndexService({ db }),
 				memoryRetrieve: new MemoryRetrieveService({ db }),
 				memoryConsolidation: new MemoryConsolidationService({ db }),
+				memoryVault: new MemoryVaultService({ db }),
 			},
 		} as unknown as HostServiceContext;
 		return memoryRouter.createCaller(ctx);
@@ -288,6 +290,26 @@ describe("memoryRouter (B1 CRUD)", () => {
 			projectId,
 		});
 		expect(history.map((v) => v.version)).toEqual([3, 2, 1]);
+	});
+
+	it("graph returns nodes/edges + regenerateVault writes the vault (B6)", async () => {
+		const c = caller();
+		const p = await c.capture({
+			projectId,
+			intent: "Add a memory graph",
+			touchedPaths: ["packages/host-service/src/runtime/memory/vault.ts"],
+		});
+		await c.confirm({ id: p.id });
+
+		const graph = await c.graph({ projectId });
+		expect(graph.nodes.some((n) => n.kind === "playbook")).toBe(true);
+		expect(graph.nodes.some((n) => n.kind === "file")).toBe(true);
+		expect(graph.edges.some((e) => e.kind === "touches")).toBe(true);
+
+		const result = await c.regenerateVault({ projectId });
+		expect(result.written).toBe(1);
+		// Vault wrote under the test's temp SUPERSET_HOME_DIR (homeDir).
+		expect(result.vaultDir.startsWith(homeDir)).toBe(true);
 	});
 
 	it("retrieve assembles a bundle from captured + confirmed playbooks", async () => {

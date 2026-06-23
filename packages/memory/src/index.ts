@@ -9,6 +9,7 @@
 export * from "./consolidation";
 export * from "./distill";
 export * from "./fingerprint";
+export * from "./graph";
 export * from "./path-to-area";
 export * from "./ranking";
 export * from "./redaction";

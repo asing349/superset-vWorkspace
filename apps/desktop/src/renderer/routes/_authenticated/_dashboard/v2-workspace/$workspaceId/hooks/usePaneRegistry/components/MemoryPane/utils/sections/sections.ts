@@ -4,8 +4,9 @@
  * header/layout:
  *   - B4b ships "playbooks" (enabled).
  *   - B5 ships "practice" (consolidation review — enabled).
- *   - B6 adds "graph"; B7 adds "settings" (the embeddings toggle).
- * The disabled placeholders are kept here to document the intended shape and to
+ *   - B6 ships "graph" (knowledge graph — enabled).
+ *   - B7 adds "settings" (the embeddings toggle).
+ * The disabled placeholder is kept here to document the intended shape and to
  * keep the type stable as milestones land.
  */
 
@@ -23,7 +24,7 @@ export interface MemorySectionDef {
 export const MEMORY_SECTIONS: readonly MemorySectionDef[] = [
 	{ id: "playbooks", label: "Playbooks", enabled: true, milestone: "B4b" },
 	{ id: "practice", label: "Practice", enabled: true, milestone: "B5" },
-	{ id: "graph", label: "Graph", enabled: false, milestone: "B6" },
+	{ id: "graph", label: "Graph", enabled: true, milestone: "B6" },
 	{ id: "settings", label: "Settings", enabled: false, milestone: "B7" },
 ];
 

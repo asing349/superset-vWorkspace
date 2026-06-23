@@ -20,6 +20,7 @@ import {
 	IndexRefreshWatcher,
 	MemoryConsolidationService,
 	MemoryRetrieveService,
+	MemoryVaultService,
 	ProjectIndexService,
 	reconcilePlaybooksForPr,
 } from "./runtime/memory";
@@ -142,6 +143,8 @@ export function createApp(options: CreateAppOptions): CreateAppResult {
 	const memoryRetrieve = new MemoryRetrieveService({ db });
 	// Superset Memory (B5): Coding-Practice consolidation — propose/accept/revert.
 	const memoryConsolidation = new MemoryConsolidationService({ db });
+	// Superset Memory (B6): Obsidian vault generation + knowledge-graph data.
+	const memoryVault = new MemoryVaultService({ db });
 	const chatRuntime =
 		options.chatRuntime ??
 		new ChatRuntimeManager({
@@ -161,6 +164,7 @@ export function createApp(options: CreateAppOptions): CreateAppResult {
 		memoryIndex,
 		memoryRetrieve,
 		memoryConsolidation,
+		memoryVault,
 	};
 	const app = new Hono();
 	const { injectWebSocket, upgradeWebSocket } = createNodeWebSocket({ app });

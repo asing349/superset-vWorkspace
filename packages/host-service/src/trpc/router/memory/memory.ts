@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import {
 	type AreaTag,
 	distillCapture,
+	type MemoryGraph,
 	type Playbook,
 	type PlaybookProvenance,
 	type PlaybookStatus,
@@ -29,6 +30,7 @@ import {
 	ensureMemoryRootDir,
 	gatherChangedFiles,
 	type ProjectIndexStatus,
+	type RegenerateVaultResult,
 	type RetrieveResult,
 } from "../../../runtime/memory";
 import { protectedProcedure, queryProcedure, router } from "../../index";
@@ -639,6 +641,39 @@ export const memoryRouter = router({
 			return ctx.runtime.memoryConsolidation.listVersions({
 				scope: input.scope,
 				projectId: input.projectId,
+			});
+		}),
+
+	// --- Graph + vault (B6) ------------------------------------------------
+
+	/**
+	 * B6 — the knowledge-graph data for the in-panel view: `{ nodes, edges }`
+	 * where nodes are playbooks / files / area tags / practice docs and edges are
+	 * the relationships (playbook→file touched, playbook→area, playbook↔similar,
+	 * playbook→practice). Pure assembly from the local rows; no I/O, no network.
+	 */
+	graph: queryProcedure
+		.input(
+			z.object({ projectId: z.string().nullable().default(null) }).optional(),
+		)
+		.query(({ ctx, input }): MemoryGraph => {
+			return ctx.runtime.memoryVault.graph({
+				projectId: input?.projectId ?? null,
+			});
+		}),
+
+	/**
+	 * B6 — (re)generate the on-disk Obsidian vault under
+	 * `~/.superset/memory/vault/` (one note per playbook, with `[[wikilinks]]`).
+	 * Idempotent + regenerable; prunes notes for playbooks that no longer exist.
+	 */
+	regenerateVault: protectedProcedure
+		.input(
+			z.object({ projectId: z.string().nullable().default(null) }).optional(),
+		)
+		.mutation(({ ctx, input }): RegenerateVaultResult => {
+			return ctx.runtime.memoryVault.regenerateVault({
+				projectId: input?.projectId ?? null,
 			});
 		}),
 
