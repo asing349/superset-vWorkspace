@@ -366,3 +366,47 @@ export const memoryTelemetry = sqliteTable(
 		index("memory_telemetry_metric_idx").on(table.metric),
 	],
 );
+
+// ---------------------------------------------------------------------------
+// Linear ticket → autonomous PR (Wave 4, Part B) — local-only, host-side store.
+// The cloud schema stays frozen (carry wave-3's local-only discipline); the
+// approved ticket context is the TOP-precedence layer assembled for the
+// autonomous run (developer-approved > project practice > global practice).
+// ---------------------------------------------------------------------------
+
+/**
+ * The developer-approved, per-ticket context (B3) — the single human gate's
+ * output. Keyed by `(projectId, taskId)`: one approved context per ticket per
+ * project. `taskId` is the CLOUD `tasks.id` (Linear-synced), so it is a plain
+ * text column with NO foreign key — the cloud schema is not referenced here.
+ * `content` is the approved Markdown; it is redacted (secret-scrubbed) BEFORE
+ * being written (redaction point #1). The store is an upsert on the unique
+ * `(projectId, taskId)` pair, so re-approving replaces rather than duplicates.
+ */
+export const approvedTicketContext = sqliteTable(
+	"approved_ticket_context",
+	{
+		id: text().primaryKey(),
+		projectId: text("project_id")
+			.notNull()
+			.references(() => projects.id, { onDelete: "cascade" }),
+		// CLOUD task id (Linear-synced `tasks.id`). Intentionally NO FK — the host
+		// SQLite db does not mirror the cloud `tasks` table.
+		taskId: text("task_id").notNull(),
+		content: text().notNull(),
+		approvedBy: text("approved_by"),
+		createdAt: integer("created_at")
+			.notNull()
+			.$defaultFn(() => Date.now()),
+		updatedAt: integer("updated_at")
+			.notNull()
+			.$defaultFn(() => Date.now()),
+	},
+	(table) => [
+		index("approved_ticket_context_project_id_idx").on(table.projectId),
+		uniqueIndex("approved_ticket_context_project_task_unique").on(
+			table.projectId,
+			table.taskId,
+		),
+	],
+);

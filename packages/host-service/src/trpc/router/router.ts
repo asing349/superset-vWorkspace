@@ -19,6 +19,7 @@ import { pullRequestsRouter } from "./pull-requests";
 import { settingsRouter } from "./settings";
 import { terminalRouter } from "./terminal";
 import { terminalAgentsRouter } from "./terminal-agents";
+import { ticketContextRouter } from "./ticket-context";
 import { workspaceRouter } from "./workspace";
 import { workspaceCleanupRouter } from "./workspace-cleanup";
 import { workspaceCreationRouter } from "./workspace-creation";
@@ -46,6 +47,7 @@ export const appRouter = router({
 	settings: settingsRouter,
 	terminal: terminalRouter,
 	terminalAgents: terminalAgentsRouter,
+	ticketContext: ticketContextRouter,
 	workspace: workspaceRouter,
 	workspaces: workspacesRouter,
 	workspaceGroup: workspaceGroupRouter,
