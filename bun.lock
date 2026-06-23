@@ -796,6 +796,7 @@
         "@hono/trpc-server": "0.3.4",
         "@mastra/core": "1.33.1",
         "@mastra/memory": "1.18.0",
+        "@modelcontextprotocol/sdk": "1.28.0",
         "@octokit/rest": "22.0.1",
         "@superset/chat": "workspace:*",
         "@superset/mcp": "workspace:*",

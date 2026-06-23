@@ -23,6 +23,10 @@ export {
 	createHostMemoryMcpServer,
 	HostMemoryDataProvider,
 } from "./mcp-provider.ts";
+export {
+	MEMORY_MCP_ROUTE_PATH,
+	registerMemoryMcpRoute,
+} from "./mcp-route.ts";
 export * from "./paths.ts";
 export {
 	ANTI_PATTERN_PREFIX,
@@ -41,6 +45,10 @@ export {
 	type RetrieveInput,
 	type RetrieveResult,
 } from "./retrieve-service.ts";
+export {
+	regenerateMemorySkillForProject,
+	regenerateMemorySkillsForAllProjects,
+} from "./skill-regen.ts";
 export { extractSymbols } from "./symbol-extractor.ts";
 export {
 	MemoryVaultService,

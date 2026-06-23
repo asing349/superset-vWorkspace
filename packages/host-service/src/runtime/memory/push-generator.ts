@@ -25,6 +25,21 @@ Superset keeps a **local** memory of how past tasks were done in this repo and
 feeds the relevant slice back to you. It is exposed over a local MCP server
 named \`superset-memory\` (no network — everything stays on this machine).
 
+## Connecting (loopback, egress-free)
+
+The host serves \`superset-memory\` over **MCP-over-HTTP (Streamable HTTP)** on its
+**loopback** interface (\`127.0.0.1\` only — no auth, no egress). The endpoint is
+\`<host-endpoint>/mcp/memory\`, where \`<host-endpoint>\` is the running host's URL
+published in its manifest at \`~/.superset/host/<organizationId>/manifest.json\`
+(the \`endpoint\` field, e.g. \`http://127.0.0.1:<port>\`). External CLI agents
+register it like any other local MCP server, e.g.:
+
+\`\`\`jsonc
+// .mcp.json (Claude Code / Cursor) — point url at the manifest's endpoint
+{ "mcpServers": { "superset-memory": {
+  "type": "http", "url": "http://127.0.0.1:<port>/mcp/memory" } } }
+\`\`\`
+
 ## When to use
 
 At the **start** of any non-trivial task, before grepping/exploring: pull the

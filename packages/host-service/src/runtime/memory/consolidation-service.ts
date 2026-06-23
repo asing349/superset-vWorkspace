@@ -111,13 +111,46 @@ function rowToPlaybook(row: typeof memoryPlaybooks.$inferSelect): Playbook {
 
 export interface MemoryConsolidationServiceOptions {
 	db: HostDb;
+	/**
+	 * Fired AFTER a project-scoped practice doc is written to disk
+	 * (`accept`/`revert`). Pure side-effect hook used by `app.ts` to keep the
+	 * generated `superset-memory` skill current (wave-4 A1(b)); it changes no
+	 * consolidation logic. Best-effort — a throw here must not fail the write,
+	 * so the service swallows it.
+	 */
+	onProjectPracticeWritten?: (event: { projectId: string }) => void;
 }
 
 export class MemoryConsolidationService {
 	private readonly db: HostDb;
+	private readonly onProjectPracticeWritten?: (event: {
+		projectId: string;
+	}) => void;
 
 	constructor(options: MemoryConsolidationServiceOptions) {
 		this.db = options.db;
+		this.onProjectPracticeWritten = options.onProjectPracticeWritten;
+	}
+
+	/**
+	 * Notify the optional post-write hook for a project-scoped write. Best-effort
+	 * — global writes have no per-project skill target, and a throwing listener
+	 * must never fail the consolidation that already wrote the doc.
+	 */
+	private notifyProjectPracticeWritten(options: {
+		scope: PracticeScope;
+		projectId: string | null;
+	}): void {
+		if (options.scope !== "project" || options.projectId === null) return;
+		if (!this.onProjectPracticeWritten) return;
+		try {
+			this.onProjectPracticeWritten({ projectId: options.projectId });
+		} catch (error) {
+			console.warn(
+				"[host-service:memory] onProjectPracticeWritten hook failed",
+				{ projectId: options.projectId, error },
+			);
+		}
 	}
 
 	/**
@@ -240,12 +273,17 @@ export class MemoryConsolidationService {
 	}): PracticeVersion {
 		const targetPath = this.resolveTargetPath(options);
 		this.writeDoc(options.scope, targetPath, options.content);
-		return this.recordVersion({
+		const version = this.recordVersion({
 			scope: options.scope,
 			projectId: options.scope === "global" ? null : options.projectId,
 			content: options.content,
 			provenance: options.provenance ?? null,
 		});
+		this.notifyProjectPracticeWritten({
+			scope: options.scope,
+			projectId: options.projectId,
+		});
+		return version;
 	}
 
 	/**
@@ -281,12 +319,17 @@ export class MemoryConsolidationService {
 		const restored = target as PracticeVersion;
 		const targetPath = this.resolveTargetPath(options);
 		this.writeDoc(options.scope, targetPath, restored.content);
-		return this.recordVersion({
+		const version = this.recordVersion({
 			scope: options.scope,
 			projectId: options.scope === "global" ? null : options.projectId,
 			content: restored.content,
 			provenance: `Reverted to version ${restored.version}`,
 		});
+		this.notifyProjectPracticeWritten({
+			scope: options.scope,
+			projectId: options.projectId,
+		});
+		return version;
 	}
 
 	/** Versions for a (scope, projectId), newest first. */

@@ -20,9 +20,12 @@ const EDGE_CLASS: Record<MemoryGraph["edges"][number]["kind"], string> = {
 
 /**
  * Inline SVG knowledge-graph view (B6). Uses the pure, deterministic
- * `computeForceLayout` from `@superset/memory` (no graph-lib dependency, A12).
- * Nodes are clickable; the parent maps the click to an action (select playbook
- * / open file / filter area).
+ * `computeForceLayout` from the RENDERER-LOCAL copy in `../../utils/forceLayout`
+ * (no graph-lib dependency, A12). The renderer is not a dependency of
+ * `@superset/memory`, so the force layout is duplicated browser-side rather than
+ * imported from that package (the canonical copy lives in `@superset/memory` for
+ * the host + its tests). Nodes are clickable; the parent maps the click to an
+ * action (select playbook / open file / filter area).
  */
 export function MemoryGraphView({
 	graph,

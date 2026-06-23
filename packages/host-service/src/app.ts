@@ -24,6 +24,9 @@ import {
 	MemoryVaultService,
 	ProjectIndexService,
 	reconcilePlaybooksForPr,
+	regenerateMemorySkillForProject,
+	regenerateMemorySkillsForAllProjects,
+	registerMemoryMcpRoute,
 } from "./runtime/memory";
 import { PullRequestRuntimeManager } from "./runtime/pull-requests";
 import {
@@ -128,6 +131,10 @@ export function createApp(options: CreateAppOptions): CreateAppResult {
 		// is a no-op; errors are swallowed so PR sync never fails on memory work).
 		onPullRequestTerminal: ({ projectId, prNumber, terminalState }) => {
 			reconcilePlaybooksForPr({ db, projectId, prNumber, terminalState });
+			// Wave-4 A1(b): a confirm/demote is a memory mutation — keep the
+			// generated `superset-memory` skill fresh for this project. Idempotent
+			// + best-effort (regen swallows its own errors).
+			regenerateMemorySkillForProject({ db, projectId });
 		},
 	});
 	pullRequestRuntime.start();
@@ -150,7 +157,14 @@ export function createApp(options: CreateAppOptions): CreateAppResult {
 		embeddings: memoryEmbeddings,
 	});
 	// Superset Memory (B5): Coding-Practice consolidation — propose/accept/revert.
-	const memoryConsolidation = new MemoryConsolidationService({ db });
+	// Wave-4 A1(b): regenerate the `superset-memory` skill after a project-scoped
+	// practice write so the pushed SKILL.md tracks the latest consolidation.
+	const memoryConsolidation = new MemoryConsolidationService({
+		db,
+		onProjectPracticeWritten: ({ projectId }) => {
+			regenerateMemorySkillForProject({ db, projectId });
+		},
+	});
 	// Superset Memory (B6): Obsidian vault generation + knowledge-graph data.
 	const memoryVault = new MemoryVaultService({ db });
 	const chatRuntime =
@@ -208,6 +222,17 @@ export function createApp(options: CreateAppOptions): CreateAppResult {
 		console.warn("[host-service] main-workspace sweep failed:", err);
 	});
 
+	// Superset Memory (wave-4 A1(b)): regenerate the generated `superset-memory`
+	// skill for every known project on startup so the pushed SKILL.md is fresh
+	// the moment the host comes up. Idempotent (overwrites in place) and
+	// best-effort; runs synchronously here because each write is a tiny local
+	// file op (the helper swallows its own per-project errors).
+	try {
+		regenerateMemorySkillsForAllProjects({ db });
+	} catch (err) {
+		console.warn("[host-service] startup memory-skill regen failed:", err);
+	}
+
 	const wsAuth: MiddlewareHandler = async (c, next) => {
 		const token = c.req.query("token");
 		const authorized =
@@ -226,6 +251,16 @@ export function createApp(options: CreateAppOptions): CreateAppResult {
 		eventBus,
 		upgradeWebSocket,
 	});
+
+	// Superset Memory (wave-4 A1(a)): serve the LOCAL "superset-memory" MCP server
+	// over a loopback Streamable-HTTP endpoint so an EXTERNAL CLI agent (Claude
+	// Code, Codex, …) on this machine can pull memory. Mounted on the existing
+	// host app — which binds 127.0.0.1 only — and intentionally NOT behind
+	// `wsAuth`: the server is local + egress-free (reads only host SQLite), so it
+	// needs no host secret. Discovery: the host endpoint is published in the
+	// host manifest (`~/.superset/host/<orgId>/manifest.json`); the memory server
+	// lives at `<endpoint>/mcp/memory`, and the generated SKILL.md documents it.
+	registerMemoryMcpRoute({ app, db, retrieve: memoryRetrieve });
 
 	app.use(
 		"/trpc/*",
