@@ -204,3 +204,165 @@ export const workspaceGroupRoots = sqliteTable(
 	},
 	(t) => [index("workspace_group_roots_group_id_idx").on(t.groupId)],
 );
+
+// ---------------------------------------------------------------------------
+// Superset Memory (Part B) — local-only metadata store. The on-disk Markdown
+// vault and the lexical/vector index live under `~/.superset/memory/` (see
+// `runtime/memory/paths.ts`); these tables hold the structured metadata. All
+// structured fields are JSON-as-text (SQLite has no native array/json column).
+// ---------------------------------------------------------------------------
+
+/**
+ * Episodic memory: one row per captured task (a `Playbook`). Captured
+ * `provisional` at PR time (B2), `confirmed` on merge, `demoted` on
+ * close-unmerged. `projectId` is nullable so an unscoped Playbook is allowed.
+ * `touchedPathsJson` / `areaTagsJson` / `commandsJson` are JSON string arrays.
+ */
+export const memoryPlaybooks = sqliteTable(
+	"memory_playbooks",
+	{
+		id: text().primaryKey(),
+		projectId: text("project_id").references(() => projects.id, {
+			onDelete: "cascade",
+		}),
+		intent: text().notNull(),
+		touchedPathsJson: text("touched_paths_json").notNull().default("[]"),
+		areaTagsJson: text("area_tags_json").notNull().default("[]"),
+		commandsJson: text("commands_json").notNull().default("[]"),
+		gotcha: text(),
+		diffShape: text("diff_shape"),
+		validation: text(),
+		status: text().notNull().default("provisional"),
+		confidence: integer().notNull().default(0),
+		provenanceJson: text("provenance_json").notNull().default("{}"),
+		createdAt: integer("created_at")
+			.notNull()
+			.$defaultFn(() => Date.now()),
+		updatedAt: integer("updated_at")
+			.notNull()
+			.$defaultFn(() => Date.now()),
+	},
+	(table) => [
+		index("memory_playbooks_project_id_idx").on(table.projectId),
+		index("memory_playbooks_status_idx").on(table.status),
+		index("memory_playbooks_project_status_idx").on(
+			table.projectId,
+			table.status,
+		),
+	],
+);
+
+/**
+ * Semantic memory: the lightweight per-project codebase map (B3). One row per
+ * indexed path/symbol. `fingerprintId` links to `memory_fingerprints` for
+ * staleness detection.
+ */
+export const memoryProjectIndex = sqliteTable(
+	"memory_project_index",
+	{
+		id: text().primaryKey(),
+		projectId: text("project_id")
+			.notNull()
+			.references(() => projects.id, { onDelete: "cascade" }),
+		path: text().notNull(),
+		kind: text().notNull().default("file"),
+		areaTagsJson: text("area_tags_json").notNull().default("[]"),
+		summary: text(),
+		fingerprintId: text("fingerprint_id"),
+		updatedAt: integer("updated_at")
+			.notNull()
+			.$defaultFn(() => Date.now()),
+	},
+	(table) => [
+		index("memory_project_index_project_id_idx").on(table.projectId),
+		uniqueIndex("memory_project_index_project_path_unique").on(
+			table.projectId,
+			table.path,
+		),
+	],
+);
+
+/**
+ * Durable Coding Practice, versioned for revert (B5). The current doc for a
+ * `(scope, projectId)` is the row with the highest `version`. `projectId` is
+ * null for `scope: "global"`.
+ */
+export const memoryPracticeVersions = sqliteTable(
+	"memory_practice_versions",
+	{
+		id: text().primaryKey(),
+		scope: text().notNull(),
+		projectId: text("project_id").references(() => projects.id, {
+			onDelete: "cascade",
+		}),
+		version: integer().notNull(),
+		content: text().notNull(),
+		provenance: text(),
+		createdAt: integer("created_at")
+			.notNull()
+			.$defaultFn(() => Date.now()),
+	},
+	(table) => [
+		index("memory_practice_versions_scope_project_idx").on(
+			table.scope,
+			table.projectId,
+		),
+		uniqueIndex("memory_practice_versions_scope_project_version_unique").on(
+			table.scope,
+			table.projectId,
+			table.version,
+		),
+	],
+);
+
+/**
+ * Content-hash + commit-SHA fingerprints for staleness detection (B3). Best
+ * effort: a mismatch means "refresh", never a hard failure.
+ */
+export const memoryFingerprints = sqliteTable(
+	"memory_fingerprints",
+	{
+		id: text().primaryKey(),
+		projectId: text("project_id")
+			.notNull()
+			.references(() => projects.id, { onDelete: "cascade" }),
+		subject: text().notNull(),
+		contentHash: text("content_hash").notNull(),
+		commitSha: text("commit_sha"),
+		createdAt: integer("created_at")
+			.notNull()
+			.$defaultFn(() => Date.now()),
+	},
+	(table) => [
+		index("memory_fingerprints_project_id_idx").on(table.projectId),
+		uniqueIndex("memory_fingerprints_project_subject_unique").on(
+			table.projectId,
+			table.subject,
+		),
+	],
+);
+
+/**
+ * Local token-savings / exploration telemetry (B4). `projectId` and `taskId`
+ * are nullable so a global/anonymous sample is allowed.
+ */
+export const memoryTelemetry = sqliteTable(
+	"memory_telemetry",
+	{
+		id: text().primaryKey(),
+		projectId: text("project_id").references(() => projects.id, {
+			onDelete: "cascade",
+		}),
+		taskId: text("task_id"),
+		metric: text().notNull(),
+		baselineValue: integer("baseline_value"),
+		observedValue: integer("observed_value").notNull(),
+		createdAt: integer("created_at")
+			.notNull()
+			.$defaultFn(() => Date.now()),
+	},
+	(table) => [
+		index("memory_telemetry_project_id_idx").on(table.projectId),
+		index("memory_telemetry_metric_idx").on(table.metric),
+	],
+);

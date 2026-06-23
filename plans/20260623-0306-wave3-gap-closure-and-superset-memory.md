@@ -71,7 +71,7 @@ Part A — gap closure:
 - [x] (2026-06-22) A5 — Interactive end-to-end recorded in **Outcomes & Retrospective**: the wave-1/2 acceptance written as a step-by-step checklist (with the NEW A1 explorer-mutation step + A3 line-focus step); auto-verified everything checkable without the GUI (typecheck 28/28, lint 0, host-service 757/0 incl. the on-disk `{groupId,rootId}` write proof `filesystem-group-writes` 9/0, workspace-fs 41/0, workspace-client 9/0, v2-group+v2-workspace 127/0, production electron-vite bundle builds exit 0); flagged steps 1–9 as a human handoff (dev sign-in + native pickers + agent launch can't be driven headlessly); added a time-boxed Playwright-electron evaluation (recorded as a future follow-up, no production code). Pre-existing env-only renderer failures (`appearance`, `useOrderedSections`) confirmed NOT touched by Part A.
 
 Part B — Superset Memory (local):
-- [ ] B1 — Memory data model + `packages/memory` + host `memory` router; path→area mapping; redaction.
+- [x] (2026-06-22) B1 — Memory data model + `packages/memory` + host `memory` router; path→area mapping; redaction. New pure-logic `@superset/memory` package (types — `Playbook`/`ProjectIndexEntry`/`PracticeDoc`+`PracticeVersion`/`MemoryFingerprint`/`AreaTag`/`MemoryTelemetrySample`; `pathToAreas`/`pathsToAreas` multi-label map from the AGENTS.md layout; best-effort `redactText`/`redactAll`; a `rankByAreaAndRecency` helper stub for B4) — no Node deps. Host SQLite tables `memory_playbooks`, `memory_project_index`, `memory_practice_versions`, `memory_fingerprints`, `memory_telemetry` (migration `0007_memory_tables.sql`, drizzle-generated). Host `memory` tRPC router registered in `router.ts`: REAL `listPlaybooks`/`getPlaybook`/`capture`/`confirm`/`demote`/`forget`/`getPractice`/`telemetry.record`+`telemetry.read`; typed non-throwing STUBs `consolidatePractice` (B5), `indexStatus`+`reindex` (B3), `retrieve` (B4). `~/.superset/memory/` path helper + ensure-dir (`runtime/memory/paths.ts`, honors `SUPERSET_HOME_DIR`). Gates: typecheck 29/29; lint exit 0; `bun test packages/memory` 34/0; memory router 7/0; host-service full suite **764/0/8-todo** (was 757, +7). Seam for B2 = the `capture` input shape (see Decision Log).
 - [ ] B2 — Capture: PR-time "Save to memory?" prompt → distill provisional Playbook → confirm-on-merge / demote-on-reject; anti-pattern capture from review rejections.
 - [ ] B3 — Lightweight Project Index (structural map + lexical) + incremental `fs:events` refresh + fingerprints.
 - [ ] B4 — Retrieval & injection (Practice + area-filtered Playbooks + index slices) via `CLAUDE.md`/skills push **and** a local "memory" MCP server (pull); local token-savings telemetry.
@@ -95,6 +95,15 @@ Timestamp each item when checked off; split partials into done/remaining.
 - (A4) `packages/workspace-client` had no test infra at all (no `test` script, not in turbo's `test` pipeline). A4 added the first one: a `test` script (`bun test --pass-with-no-tests`) + a `bun-types` devDep + `tsconfig` `types: ["node","bun-types"]` (so `bun:test` resolves while keeping node globals for the source). The eventBus connects eagerly on `getEventBus`, but using non-`/hosts/` URLs makes `primeRelayAffinity` a no-op (it only `fetch`es `/hosts/<id>/*`), so the tests only need a `globalThis.WebSocket` stub, not a `fetch` mock. turbo now discovers `@superset/workspace-client#test`.
 
 - (A5) The on-disk `{groupId,rootId}` write behavior A1 depends on was ALREADY covered by an integration test (`packages/host-service/test/integration/filesystem-group-writes.integration.test.ts`, 9 cases) from wave-2 M1 — so A5's "exercise the host FS write procs to prove on-disk create/rename/delete/move for a {groupId,rootId} target" was satisfied by running that suite rather than writing a new ad-hoc script.
+
+- (B1) `host-service` deps hoist into `packages/host-service/node_modules`, NOT the repo-root `node_modules` (there is no root `node_modules/@superset`). After adding `@superset/memory` to host-service's `package.json`, a `bun install` is required before `bun test` can resolve the import — the symlink lands at `packages/host-service/node_modules/@superset/memory -> ../../../memory`.
+  Evidence: `ls node_modules/@superset` at the repo root errors; the link exists under host-service.
+
+- (B1) host-service has its OWN `~/.superset` convention (`SUPERSET_HOME_DIR` override, else `~/.superset`) already used by `runtime/workspace-groups/prepare-agent-root.ts` for `group-roots/`. B1's `runtime/memory/paths.ts` deliberately re-derives the same way (a tiny local `getSupersetHomeDir`) so the memory vault/index live alongside worktrees and tests can redirect the whole tree via `SUPERSET_HOME_DIR`. The memory paths are constants + an ensure-dir only — no vault/index is written in B1.
+
+- (B1) Redaction seam tightened during implementation: the `.env`-style secret rule was initially matching `:` separators too, which false-positived on HTTP headers (`Authorization: ...`) and prose (`author: ...`). Fixed to match only `=` assignments and dropped `AUTH` from the key-name alternation (the dedicated `bearer-token` rule already covers auth headers). Captured as a negative-case test. This is exactly the "best-effort, imperfect" posture Assumption A9 calls out.
+
+- (B1) `AreaTag` is a string union (not just labels from AGENTS.md): added `trpc`, `mcp`, `auth`, `memory`, plus cross-cutting `tests`/`config`/`other` so secondary filename rules (a `*.test.ts` or a `package.json` anywhere) are multi-label on top of the package-prefix rule. Adding an area is a one-line change in `AREA_RULES` + the union.
 
 (Add observations as work proceeds.)
 
@@ -124,6 +133,18 @@ Timestamp each item when checked off; split partials into done/remaining.
 - Decision: Memory is delivered provider-agnostically via a local MCP server (pull) plus a Claude-native `CLAUDE.md`/skills push; consolidation prunes/merges and is versioned.
   Rationale: Maximizes reuse across agents and protects the token-savings goal (small, fresh always-loaded layer).
   Date/Author: 2026-06-23, planning session.
+
+- Decision: (B1) `memory.capture` persists a PRE-DISTILLED Playbook input; it does NOT distill a session. The router only validates (Zod), redacts free text, derives multi-label area tags from `touchedPaths` (merging any explicit labels the caller passes), and persists a `provisional` row. **The seam B2 must call** is the `capture` input shape: `{ projectId: string|null, intent: string, touchedPaths: string[], areaTags?: AreaTag[], commands: string[], gotcha: string|null, diffShape: string|null, validation: string|null, provenance: { prNumber: number|null, url: string|null, taskId: string|null } }` (exported as `MemoryCaptureInput`). B2 owns turning a finished session INTO this shape.
+  Rationale: Keeps B1 a clean, testable persistence/validation layer; distillation (model-driven, session-aware) is B2's concern and shouldn't leak into the data model.
+  Date/Author: 2026-06-22, B1 implementation.
+
+- Decision: (B1) Later-milestone procedures are STUBBED as typed, non-throwing returns (`{ implemented: false, milestone: "B3"|"B4"|"B5" }`, with `retrieve` also returning `playbooks: []`) rather than `throw new TRPCError("NOT_IMPLEMENTED")`.
+  Rationale: A thrown stub would break any caller/typecheck that wires the procedure early; a typed empty result lets the renderer + MCP server bind to the full surface now and light up as milestones land.
+  Date/Author: 2026-06-22, B1 implementation.
+
+- Decision: (B1) `confidence` is stored as an INTEGER 0–100 (not a 0–1 float) because the host SQLite columns are integer; the pure-logic `Playbook.confidence` type is `number` and B4's ranking helper works on relative scores, so the unit is an internal storage choice. `confirm` defaults to 80; `demote`/archive resets to 0.
+  Rationale: Avoids a float column + keeps confidence human-readable in the DB; revisit if B4 needs sub-integer resolution.
+  Date/Author: 2026-06-22, B1 implementation.
 
 
 ## Context and Orientation

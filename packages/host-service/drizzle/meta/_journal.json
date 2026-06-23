@@ -50,6 +50,13 @@
       "when": 1781859612043,
       "tag": "0006_workspace_groups",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1782189719153,
+      "tag": "0007_memory_tables",
+      "breakpoints": true
     }
   ]
 }
