@@ -9,11 +9,12 @@ import { eq, or } from "@tanstack/db";
 import { useLiveQuery } from "@tanstack/react-db";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { MarkdownEditor } from "renderer/components/MarkdownEditor";
 import { apiTrpcClient } from "renderer/lib/api-trpc-client";
 import { useOptimisticCollectionActions } from "renderer/routes/_authenticated/hooks/useOptimisticCollectionActions";
 import { useCollections } from "renderer/routes/_authenticated/providers/CollectionsProvider";
+import { useLocalHostService } from "renderer/routes/_authenticated/providers/LocalHostServiceProvider";
 import { Route as TasksLayoutRoute } from "../layout";
 import { tasksSearchFromFilters } from "../stores/tasks-filter-state";
 import { ActivitySection } from "./components/ActivitySection";
@@ -23,6 +24,7 @@ import { TaskDetailHeader } from "./components/TaskDetailHeader";
 import { TicketContextBuilder } from "./components/TicketContextBuilder";
 import { TicketRunLauncher } from "./components/TicketRunLauncher";
 import { useEscapeToNavigate } from "./hooks/useEscapeToNavigate";
+import { useTicketContextApproval } from "./hooks/useTicketContextApproval";
 
 export const Route = createFileRoute(
 	"/_authenticated/_dashboard/tasks/$taskId/",
@@ -134,6 +136,17 @@ function TaskDetailPage() {
 	};
 	const creatorName = task?.creator?.name?.trim() ? task.creator.name : null;
 
+	// Shared state for the single human gate. The primary repo (lifted from the
+	// run launcher) keys the approved-context store `(projectId, taskId)`, and the
+	// same approval state both drives the approve UI and gates "Start run".
+	const { activeHostUrl } = useLocalHostService();
+	const [primaryProjectId, setPrimaryProjectId] = useState<string | null>(null);
+	const approval = useTicketContextApproval({
+		hostUrl: activeHostUrl,
+		projectId: primaryProjectId,
+		taskId: task?.id ?? null,
+	});
+
 	if (!task) {
 		if (isTaskLoading || isTaskSyncing) {
 			return (
@@ -182,6 +195,8 @@ function TaskDetailPage() {
 								externalKey: task.externalKey,
 								externalUrl: task.externalUrl,
 							}}
+							projectId={primaryProjectId}
+							approval={approval}
 						/>
 
 						<Separator className="my-8" />
@@ -191,6 +206,8 @@ function TaskDetailPage() {
 						<TicketRunLauncher
 							taskId={task.id}
 							ticketKey={task.externalKey ?? task.slug}
+							onPrimaryProjectChange={setPrimaryProjectId}
+							approval={approval}
 						/>
 
 						{creatorName ? (

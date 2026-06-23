@@ -24,6 +24,7 @@ import { useCollections } from "renderer/routes/_authenticated/providers/Collect
 import { useLocalHostService } from "renderer/routes/_authenticated/providers/LocalHostServiceProvider";
 import { useV2WorkspaceCreateDefaultsStore } from "renderer/stores/v2-workspace-create-defaults";
 import { MOCK_ORG_ID } from "shared/constants";
+import type { UseTicketContextApprovalResult } from "../../hooks/useTicketContextApproval";
 import { useTicketRunStart } from "../../hooks/useTicketRunStart";
 import {
 	buildTicketRunRequest,
@@ -40,6 +41,11 @@ interface TicketRunLauncherProps {
 	 * project `(projectId, taskId)`. `null` until a primary repo resolves.
 	 */
 	onPrimaryProjectChange?: (projectId: string | null) => void;
+	/**
+	 * Shared approval state (the single gate). The autonomous run is blocked until
+	 * an approved context exists for `(primaryProjectId, taskId)`.
+	 */
+	approval: UseTicketContextApprovalResult;
 }
 
 interface RecentProject {
@@ -53,6 +59,7 @@ export function TicketRunLauncher({
 	taskId,
 	ticketKey,
 	onPrimaryProjectChange,
+	approval,
 }: TicketRunLauncherProps) {
 	const collections = useCollections();
 	const hostService = useLocalHostService();
@@ -175,6 +182,14 @@ export function TicketRunLauncher({
 		if (unsetAdditional) {
 			return `Repo "${unsetAdditional.name}" not set up on this host`;
 		}
+		// THE GATE: an approved context for (primaryProjectId, taskId) is required
+		// before the autonomous run. Block until the approval query has resolved
+		// (so we never start a run while the gate state is still unknown), then
+		// require a non-null approved context.
+		if (!approval.isApprovalLoaded) return "Checking approval…";
+		if (approval.approvedContent === null) {
+			return "Approve the context first";
+		}
 		return null;
 	}, [
 		primaryProjectId,
@@ -182,7 +197,17 @@ export function TicketRunLauncher({
 		additionalProjects,
 		setUpProjectIds,
 		activeHostUrl,
+		approval.isApprovalLoaded,
+		approval.approvedContent,
 	]);
+
+	// Show the gate hint only when approval is the actual blocker (the repo is
+	// chosen + set up, the host is up, but nothing is approved yet).
+	const needsApproval =
+		!!primaryProjectId &&
+		!!activeHostUrl &&
+		approval.isApprovalLoaded &&
+		approval.approvedContent === null;
 
 	const launch = () => {
 		if (!primaryProjectId) return;
@@ -350,15 +375,23 @@ export function TicketRunLauncher({
 				</Popover>
 			</div>
 
-			<Button
-				size="sm"
-				className="h-8 gap-1.5"
-				disabled={!!submitBlocker || isStarting}
-				onClick={handleStart}
-			>
-				<HiMiniPlay className="size-3.5" />
-				{isStarting ? "Starting…" : "Start autonomous run"}
-			</Button>
+			<div className="flex flex-col gap-1.5">
+				<Button
+					size="sm"
+					className="h-8 gap-1.5"
+					disabled={!!submitBlocker || isStarting}
+					onClick={handleStart}
+				>
+					<HiMiniPlay className="size-3.5" />
+					{isStarting ? "Starting…" : "Start autonomous run"}
+				</Button>
+				{needsApproval && (
+					<span className="text-xs text-muted-foreground">
+						Approve the context above first — it's the one gate before the
+						autonomous run.
+					</span>
+				)}
+			</div>
 		</div>
 	);
 }
