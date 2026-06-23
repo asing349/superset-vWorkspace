@@ -56,12 +56,12 @@ None blocking — design decisions are in the Decision Log per the user's "no mo
 ## Progress
 
 Part A — leftovers:
-- [ ] A1 — Wire wave-3 B4a delivery into the running host: bind the local memory MCP server to a (loopback) transport so external CLI agents can pull; auto-regenerate `.agents/skills/superset-memory/SKILL.md` on memory change; fix the stale `MemoryGraphView` docstring.
-- [ ] A2 — Execute + record the waves-1/2/3 interactive end-to-end (human handoff); optional additive Playwright-electron smoke driver.
+- [x] A1 (2026-06-23) — DONE. Local memory MCP server bound to a loopback Streamable-HTTP endpoint `/mcp/memory` (reuses the cloud route's `WebStandardStreamableHTTPServerTransport` on the existing 127.0.0.1 Hono app — no new port/socket, no auth since local + egress-free; discovered via the host manifest `endpoint` + a generated SKILL.md `.mcp.json` snippet). `SKILL.md` auto-regenerated on startup + memory mutations (PR confirm/demote, project-practice accept/revert) with `repoRoot` resolved from `projects.repoPath`. Stale `MemoryGraphView` docstring fixed. host-service+desktop typecheck clean; biome @2.4.2 clean; 574/0 src + 254/0 integration tests (+10 new). Commit `2e0e1202e`.
+- [x] A2 (2026-06-23) — RECORDED (see Outcomes). Full waves-1/2/3 acceptance checklist captured: each of 10 steps marked PASS-AUTOMATED (named green tests) or HUMAN-REQUIRED (exact GUI click-path). All per-package gates GREEN. No smoke driver added — no Playwright/Electron-GUI harness exists in the repo (per the no-new-heavy-dep constraint); follow-up noted.
 - [ ] A3 (optional) — Group/folder terminal restart durability (respawnable, not only adoptable) — low priority; include only if cheap.
 
 Part B — Linear ticket → autonomous PR:
-- [ ] B1 — "Your Linear tickets" on login (assigned-to-me preset + landing).
+- [x] B1 (2026-06-23) — DONE. "Assigned to me" preset on TasksView (new `me` sentinel on the existing `assignee` slot; pure cache-first client predicate) with `assigneeId === session.user.id` primary + display-name/email fallback for unmatched Linear external assignees; post-login landing to `/tasks?assignee=me`. Reuses the tasks Electric collection + `task.list` assigneeMe + `useTasksData` + `AssigneeFilter`; no cloud schema change. desktop typecheck + biome clean; tasks-view 18/0 (10 new matcher tests). Commit `e2041da46`.
 - [ ] B2 — Ticket context builder (no cap) + ask-for-context prompt (optional/empty).
 - [ ] B3 — The one gate: review/edit/approve UI + persist the ticket-scoped approved context (host-side, top precedence).
 - [ ] B4 — Repo scoping + multi-repo confirm (default single; ask once if multi; assemble the multi-root group).
@@ -78,6 +78,11 @@ Timestamp each item when checked off; split partials into done/remaining.
   Evidence: `workspaces.create({agents:[…]})` already does ticket→worktree(new branch from base)→headless agent in one call; `dispatchAutomation` already sequences create+launch+run-row; the `create-pr` skill already commits/pushes/opens-PR with an agent-written body and stops at open; `PullRequestRuntimeManager` already links the opened PR.
 
 (Add observations as work proceeds.)
+
+- Discovery (wave-4 gating): the plan's `bun run lint:check-node-imports` script does NOT exist in this repo. Real gates: `bun run lint` (`scripts/lint.sh` = biome **@2.4.2**, fails on ANY diagnostic, + git-usage checks), `bun run typecheck` (`turbo typecheck`), and per-package `bun test`. Renderer Node-import safety is enforced via the desktop `tsc` config + biome `noRestrictedImports`, not a dedicated script.
+- Discovery (wave-4 gating): a whole-tree `bun test` / root `turbo test` is NOT a usable gate in this sandbox — it reaches the `packages/pty-daemon` control-plane suite which spawns a real daemon and crashes Bun (same env limit recorded in waves 1–3). **Per-package `bun test <pkg>` is the standing gate.**
+- A1 surprise: `@modelcontextprotocol/sdk` was hoisted only into `packages/mcp/node_modules`; host-service could not import `@modelcontextprotocol/sdk/server/*` directly. Added it as a direct host-service dependency (`1.28.0`, matching `@superset/mcp`) — closes wave-3 B4a's left-open "bind a transport into a long-running host endpoint" follow-up.
+- B1 surprise: the `assigneeExternal*` snapshot stores NO email — only `assigneeExternalId`, `assigneeDisplayName`, `assigneeAvatarUrl`. When a Linear assignee's email maps to a Superset user the sync sets `assigneeId` directly (authoritative); the external snapshot is populated only for UNMATCHED users. So "match on email" against `assigneeExternal*` is impossible without a (forbidden) schema change; implemented a read-only display-name vs name/email/local-part fallback instead.
 
 
 ## Decision Log
@@ -105,6 +110,18 @@ Timestamp each item when checked off; split partials into done/remaining.
 - Decision: Reuse the existing Linear sync, worktree+agent launch, `dispatchAutomation` pattern, `create-pr` skill, PR runtime, multi-root group, and wave-3 memory; write no new git/clone code.
   Rationale: Audits confirm the spine exists; wave 4 is the glue.
   Date/Author: 2026-06-23, planning session.
+
+- Decision (A1 impl): serve the local memory MCP server over loopback Streamable HTTP (`WebStandardStreamableHTTPServerTransport`) mounted on the existing host Hono app at `/mcp/memory`, stateless (per-request connect), NO auth (loopback + egress-free), discovered via the existing host manifest `endpoint` + the generated SKILL.md `.mcp.json` snippet. Chose manifest-based discovery over a static repo-root `.mcp.json` because the host port is coordinator-assigned (dynamic). `repoRoot` from `projects.repoPath` (same abstraction B5 uses); regen on startup + PR confirm/demote + project-practice accept/revert. Pure wiring; zero memory-logic change.
+  Rationale: Reuse the proven cloud-route transport; no new port/socket; keep the pushed skill fresh automatically.
+  Date/Author: 2026-06-23, host teammate + orchestrator review.
+
+- Decision (B1 impl): match "assigned to me" via `assigneeId === session.user.id` (authoritative) plus, for unmatched Linear external assignees (no email stored), a read-only display-name vs name/email/local-part fallback. No schema change.
+  Rationale: `assigneeExternal*` stores no email; respect the no-cloud-schema-change rule.
+  Date/Author: 2026-06-23, tickets teammate + orchestrator review.
+
+- Decision (gating): standing gates are biome @2.4.2 (`bun run lint` → `scripts/lint.sh`), `turbo typecheck`, and PER-PACKAGE `bun test`; the whole-tree `bun test` is unusable here (pty-daemon spawn crashes Bun). The stale `bun run lint:check-node-imports` reference is superseded by biome `noRestrictedImports` + desktop tsc.
+  Rationale: Matches the actual repo scripts + the documented sandbox limitation.
+  Date/Author: 2026-06-23, orchestrator.
 
 
 ## Context and Orientation
@@ -246,6 +263,29 @@ No cloud schema change; no new heavyweight dependencies. Reuse: Linear sync + cl
 
 
 ## Outcomes & Retrospective
+
+### A2 — recorded waves-1/2/3 interactive acceptance (2026-06-23)
+
+The combined waves-1/2/3 GUI run is HUMAN-REQUIRED end-to-end (it needs dev sign-in, native OS folder pickers, a real CLI-agent launch, and opening a real PR — none drivable headlessly). For each step the underlying host/tRPC substrate was verified programmatically; the GUI action is a documented human handoff.
+
+| # | Step | Substrate (PASS-AUTOMATED) | GUI (HUMAN-REQUIRED) |
+|---|------|----------------------------|----------------------|
+| 1 | Multi-root group: compose two repos + a folder root | `workspace-group.test.ts` 2/0, `sqlite-store.test.ts` 10/0 | New multi-root workspace → add two repos + one plain folder |
+| 2 | Fresh worktree (new branch) per repo from the group | host `workspaces.create` new-branch path + `addRoot` (host-service 828/0); no isolated integration test (follow-up) | "Create worktree" → new root w/ own Changes panel |
+| 3 | Edit across roots incl. a folder root (write to disk) | `filesystem-group-writes.integration.test.ts` 9/0 (write/base64/mkdir/delete/move/copy on a real folder root; sandboxed; unknown rootId rejected) | open+edit+save a file per root; explorer New/Rename/Delete/Move |
+| 4 | Live refresh (external change → tree/editor) | `event-bus.test.ts` 6/0 (`fs:groupEvents` keyed by {groupId,rootId}) | external edit → live update, no manual refresh |
+| 5 | Combined agent + clickable terminal paths | `prepare-agent-root.test.ts` 9/0 (symlink-per-root, dedupe, idempotent), `filesystem-group-statpath.integration.test.ts` 6/0 | launch combined agent; click path in terminal → opens in editor |
+| 6 | Content-search line focus | `filesystem.group-search.test.ts` 2/0, renderer v2-group 31/0 (`focusLine/Column/Tick` threading) | cross-root search → click hit → scrolls to line/col |
+| 7 | Memory capture at PR time | `pull-requests.test.ts` + `pr-capture-reconciler.test.ts` (terminal hook once; confirm-on-merge, demote+anti-pattern on close) | open PR → once-per-PR "Save to memory?" → provisional Playbook |
+| 8 | Memory retrieval + consolidation buttons | `retrieve-service.test.ts`, `consolidation-service.test.ts`, memory router `memory.test.ts` 12/0 (subsystem 25/0) | "Update project/global coding practice" → review+accept diff |
+| 9 | The memory graph | `vault-service.test.ts` (regenerateVault idempotent + `graph()` nodes/edges); renderer v2-workspace 148/0 | Memory panel → inline-SVG graph w/ node-click nav |
+| 10 | Restart persistence; group-delete preserves worktrees | `sqlite-store.test.ts` 10/0 (restart sim, FK cascade, dangling defaultRootId reconciled), `workspace-group.test.ts` 2/0 | quit/relaunch → group+roots+worktrees persist; delete group → worktrees survive |
+
+Programmatic gates actually run (all GREEN at final state): `packages/memory` 127/0, `packages/workspace-fs` 41/0, `packages/workspace-client` 9/0, `packages/host-service` 828/0/8-todo (94 files), renderer v2-workspace 148/0, v2-group 31/0; host-service + memory `tsc --noEmit` exit 0; biome `noRestrictedImports` on `apps/desktop/src/renderer` clean.
+
+Notes: (a) whole-tree `bun test` is NOT a valid gate — `packages/pty-daemon` spawns a real daemon and crashes Bun in this sandbox; per-package runs are the standing gate (same as prior waves). (b) No Playwright/Electron-GUI e2e harness exists anywhere in the repo — confirmed (no `playwright.config.*`, no `@playwright`/`_electron`/`spectron`/`@wdio`); per the "no heavy new dependency / no production change" constraint, NO smoke driver was added. Follow-up: a `_electron.launch`-based smoke driver would need a test-auth bypass (Clerk), a native-folder-picker IPC stub, and a fixture host-service on a temp `SUPERSET_HOME_DIR`. (c) An in-flight A1 transient (`Cannot find module '@modelcontextprotocol/sdk/.../webStandardStreamableHttp.js'`) was caught mid-sweep and is resolved by A1 declaring the SDK dep.
+
+### Outcomes vs Purpose (filled at completion)
 
 To be filled in at completion. Compare against the Purpose: the memory pull path is live and the interactive run recorded (Part A); and a developer can go from a Linear ticket to an open PR with a single approval gate — autonomous to PR creation, never merging — with one-repo-default / ask-then-fan-out for multi-repo, a no-cap context ordered developer > project > global, redacted throughout, and the PR(s) written back to the ticket.
 
