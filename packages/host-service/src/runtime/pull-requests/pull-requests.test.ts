@@ -145,7 +145,10 @@ function createFakeDb(state: FakeState) {
 function createManager(
 	state: FakeState,
 	overrides: Partial<
-		Pick<PullRequestRuntimeManagerOptions, "execGh" | "github">
+		Pick<
+			PullRequestRuntimeManagerOptions,
+			"execGh" | "github" | "onPullRequestTerminal"
+		>
 	> = {},
 ) {
 	return new PullRequestRuntimeManager({
@@ -164,6 +167,36 @@ function createManager(
 				throw new Error("github should not be used for direct PR linking");
 			}),
 		gitWatcher: { onChanged: () => () => {} } as never,
+		onPullRequestTerminal: overrides.onPullRequestTerminal,
+	});
+}
+
+interface TerminalEvent {
+	projectId: string;
+	prNumber: number;
+	terminalState: "merged" | "closed";
+}
+
+function linkPR(
+	state: FakeState,
+	prState: "open" | "merged" | "closed",
+	onPullRequestTerminal: (event: TerminalEvent) => void,
+) {
+	const manager = createManager(state, { onPullRequestTerminal });
+	return manager.linkWorkspaceToCheckoutPullRequest({
+		workspaceId: WORKSPACE_ID,
+		projectId: PROJECT_ID,
+		pullRequest: {
+			number: 42,
+			url: "https://github.com/base-owner/base-repo/pull/42",
+			title: "T",
+			state: prState,
+			headRefName: "feat",
+			headRefOid: "abc123",
+			headRepositoryOwner: "base-owner",
+			headRepositoryName: "base-repo",
+			isCrossRepository: false,
+		},
 	});
 }
 
@@ -379,5 +412,86 @@ describe("PullRequestRuntimeManager direct checkout PR linking", () => {
 		}
 
 		expect(state.workspace.pullRequestId).toBe("pr-existing");
+	});
+});
+
+describe("PullRequestRuntimeManager terminal-state hook (B2)", () => {
+	test("fires merged when a PR is first seen merged", async () => {
+		const state = makeState("feat");
+		const events: TerminalEvent[] = [];
+
+		await linkPR(state, "merged", (e) => events.push(e));
+
+		expect(events).toEqual([
+			{ projectId: PROJECT_ID, prNumber: 42, terminalState: "merged" },
+		]);
+	});
+
+	test("fires closed when a PR is first seen closed", async () => {
+		const state = makeState("feat");
+		const events: TerminalEvent[] = [];
+
+		await linkPR(state, "closed", (e) => events.push(e));
+
+		expect(events).toEqual([
+			{ projectId: PROJECT_ID, prNumber: 42, terminalState: "closed" },
+		]);
+	});
+
+	test("does NOT fire for an open PR", async () => {
+		const state = makeState("feat");
+		const events: TerminalEvent[] = [];
+
+		await linkPR(state, "open", (e) => events.push(e));
+
+		expect(events).toEqual([]);
+	});
+
+	test("fires once on the open→merged transition, not again on re-sync", async () => {
+		const state = makeState("feat");
+		const events: TerminalEvent[] = [];
+		const manager = createManager(state, {
+			onPullRequestTerminal: (e) => events.push(e),
+		});
+
+		const link = (prState: "open" | "merged") =>
+			manager.linkWorkspaceToCheckoutPullRequest({
+				workspaceId: WORKSPACE_ID,
+				projectId: PROJECT_ID,
+				pullRequest: {
+					number: 42,
+					url: "https://github.com/base-owner/base-repo/pull/42",
+					title: "T",
+					state: prState,
+					headRefName: "feat",
+					headRefOid: "abc123",
+					headRepositoryOwner: "base-owner",
+					headRepositoryName: "base-repo",
+					isCrossRepository: false,
+				},
+			});
+
+		await link("open"); // no event
+		await link("merged"); // transition → one event
+		await link("merged"); // re-sync, same state → no event
+
+		expect(events).toEqual([
+			{ projectId: PROJECT_ID, prNumber: 42, terminalState: "merged" },
+		]);
+	});
+
+	test("a throwing listener never breaks PR linking", async () => {
+		const state = makeState("feat");
+		const originalWarn = console.warn;
+		console.warn = () => {};
+		try {
+			const prId = await linkPR(state, "merged", () => {
+				throw new Error("boom");
+			});
+			expect(prId).not.toBeNull();
+			expect(state.pullRequest?.state).toBe("merged");
+		} finally {
+			console.warn = originalWarn;
+		}
 	});
 });

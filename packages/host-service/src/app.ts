@@ -16,7 +16,11 @@ import { WorkspaceFilesystemManager } from "./runtime/filesystem";
 import type { GitCredentialProvider } from "./runtime/git";
 import { createGitFactory } from "./runtime/git";
 import { runMainWorkspaceSweep } from "./runtime/main-workspace-sweep";
-import { IndexRefreshWatcher, ProjectIndexService } from "./runtime/memory";
+import {
+	IndexRefreshWatcher,
+	ProjectIndexService,
+	reconcilePlaybooksForPr,
+} from "./runtime/memory";
 import { PullRequestRuntimeManager } from "./runtime/pull-requests";
 import {
 	createSqliteWorkspaceGroupStore,
@@ -114,6 +118,13 @@ export function createApp(options: CreateAppOptions): CreateAppResult {
 		git,
 		github,
 		gitWatcher,
+		// Superset Memory (B2): confirm-on-merge / demote-on-close. When a tracked
+		// PR first reaches a terminal state, reconcile the provisional Playbook(s)
+		// captured for it. Idempotent + best-effort (a PR with no saved Playbook
+		// is a no-op; errors are swallowed so PR sync never fails on memory work).
+		onPullRequestTerminal: ({ projectId, prNumber, terminalState }) => {
+			reconcilePlaybooksForPr({ db, projectId, prNumber, terminalState });
+		},
 	});
 	pullRequestRuntime.start();
 	// Superset Memory (B3): the lightweight per-project structural + lexical

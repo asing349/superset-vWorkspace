@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import {
 	type AreaTag,
+	distillCapture,
 	type Playbook,
 	type PlaybookProvenance,
 	type PlaybookStatus,
@@ -20,9 +21,11 @@ import {
 	memoryPlaybooks,
 	memoryPracticeVersions,
 	memoryTelemetry,
+	workspaces,
 } from "../../../db/schema";
 import {
 	ensureMemoryRootDir,
+	gatherChangedFiles,
 	type ProjectIndexStatus,
 } from "../../../runtime/memory";
 import { protectedProcedure, queryProcedure, router } from "../../index";
@@ -184,6 +187,56 @@ function readBackPlaybook(db: HostDb, id: string): Playbook {
 	return toPlaybook(row);
 }
 
+/**
+ * Persist a provided, already-distilled capture input as a `provisional`
+ * Playbook: redact free text, derive + merge area tags, insert, read back. The
+ * single source of truth for capture persistence — both `capture` (caller
+ * pre-distilled) and `captureFromPR` (host-distilled) funnel through here, so
+ * redaction/area-tagging stays identical regardless of entry point.
+ */
+function persistCapture(db: HostDb, input: MemoryCaptureInput): Playbook {
+	// Establish the on-disk memory root the first time we capture; the
+	// vault/index writers (B3/B6) live there.
+	ensureMemoryRootDir();
+
+	const intent = redactText(input.intent).text;
+	const touchedPaths = redactAll(input.touchedPaths);
+	const commands = redactAll(input.commands);
+	const gotcha = input.gotcha === null ? null : redactText(input.gotcha).text;
+	const diffShape =
+		input.diffShape === null ? null : redactText(input.diffShape).text;
+	const validation =
+		input.validation === null ? null : redactText(input.validation).text;
+
+	// Derive areas from the (redacted) paths; merge any explicit labels the
+	// caller passed. Paths are repo-relative so redaction rarely changes them,
+	// but we derive from the post-redaction list to stay consistent with what
+	// we persist.
+	const derived = pathsToAreas(touchedPaths);
+	const areaTags = input.areaTags
+		? [...new Set([...input.areaTags, ...derived])]
+		: derived;
+
+	const id = randomUUID();
+	db.insert(memoryPlaybooks)
+		.values({
+			id,
+			projectId: input.projectId,
+			intent,
+			touchedPathsJson: JSON.stringify(touchedPaths),
+			areaTagsJson: JSON.stringify(areaTags),
+			commandsJson: JSON.stringify(commands),
+			gotcha,
+			diffShape,
+			validation,
+			status: "provisional",
+			confidence: 0,
+			provenanceJson: JSON.stringify(input.provenance),
+		})
+		.run();
+	return readBackPlaybook(db, id);
+}
+
 // ---------------------------------------------------------------------------
 // Typed stub shapes — milestones B3/B4/B5. These return a typed
 // "not-implemented-here" result so callers/typecheck never break; each is
@@ -258,49 +311,76 @@ export const memoryRouter = router({
 	 */
 	capture: protectedProcedure
 		.input(captureInputSchema)
-		.mutation(({ ctx, input }): Playbook => {
-			// Establish the on-disk memory root the first time we capture; the
-			// vault/index writers (B3/B6) live there.
-			ensureMemoryRootDir();
+		.mutation(({ ctx, input }): Playbook => persistCapture(ctx.db, input)),
 
-			const intent = redactText(input.intent).text;
-			const touchedPaths = redactAll(input.touchedPaths);
-			const commands = redactAll(input.commands);
-			const gotcha =
-				input.gotcha === null ? null : redactText(input.gotcha).text;
-			const diffShape =
-				input.diffShape === null ? null : redactText(input.diffShape).text;
-			const validation =
-				input.validation === null ? null : redactText(input.validation).text;
+	/**
+	 * B2 — the PR-time "Save to memory?" entry point. The renderer hands us the
+	 * `workspaceId` + the just-opened PR's metadata; the HOST distills the
+	 * Playbook from LOCAL sources (the workspace git diff → touchedPaths +
+	 * diffShape; the PR title/body → intent) with NO model and NO network, then
+	 * persists it as a provisional Playbook. Keeps the renderer browser-safe:
+	 * all fs/git work happens here, reached over tRPC.
+	 */
+	captureFromPR: protectedProcedure
+		.input(
+			z.object({
+				workspaceId: z.string().min(1),
+				projectId: z.string().nullable().default(null),
+				prNumber: z.number().int().nullable().default(null),
+				prUrl: z.string().nullable().default(null),
+				prTitle: z.string().default(""),
+				prBody: z.string().nullable().default(null),
+				baseBranch: z.string().nullable().default(null),
+				/** Commands proven to work this session, if the caller knows them. */
+				commands: z.array(z.string()).default([]),
+				/** How success was proven locally, if known. */
+				validation: z.string().nullable().default(null),
+				taskId: z.string().nullable().default(null),
+			}),
+		)
+		.mutation(async ({ ctx, input }): Promise<Playbook> => {
+			const workspace = ctx.db.query.workspaces
+				.findFirst({ where: eq(workspaces.id, input.workspaceId) })
+				.sync();
+			if (!workspace?.worktreePath) {
+				throw new TRPCError({
+					code: "NOT_FOUND",
+					message: `Workspace not found: ${input.workspaceId}`,
+				});
+			}
 
-			// Derive areas from the (redacted) paths; merge any explicit labels B2
-			// passed. Paths are repo-relative so redaction rarely changes them, but
-			// we derive from the post-redaction list to stay consistent with what we
-			// persist.
-			const derived = pathsToAreas(touchedPaths);
-			const areaTags = input.areaTags
-				? [...new Set([...input.areaTags, ...derived])]
-				: derived;
+			// LOCAL/EGRESS-FREE: the only external read is the local git subprocess.
+			const git = await ctx.git(workspace.worktreePath);
+			const changedFiles = await gatherChangedFiles({
+				git,
+				baseBranch: input.baseBranch ?? undefined,
+			});
 
-			const id = randomUUID();
-			ctx.db
-				.insert(memoryPlaybooks)
-				.values({
-					id,
-					projectId: input.projectId,
-					intent,
-					touchedPathsJson: JSON.stringify(touchedPaths),
-					areaTagsJson: JSON.stringify(areaTags),
-					commandsJson: JSON.stringify(commands),
-					gotcha,
-					diffShape,
-					validation,
-					status: "provisional",
-					confidence: 0,
-					provenanceJson: JSON.stringify(input.provenance),
-				})
-				.run();
-			return readBackPlaybook(ctx.db, id);
+			// Deterministic distillation (no model): shape the local diff + PR
+			// metadata into the capture fields, then persist via the shared path.
+			const distilled = distillCapture({
+				prTitle: input.prTitle,
+				prBody: input.prBody,
+				changedFiles,
+				commands: input.commands,
+				validation: input.validation,
+			});
+
+			return persistCapture(ctx.db, {
+				projectId: input.projectId ?? workspace.projectId ?? null,
+				intent: distilled.intent,
+				touchedPaths: distilled.touchedPaths,
+				areaTags: distilled.areaTags,
+				commands: distilled.commands,
+				gotcha: distilled.gotcha,
+				diffShape: distilled.diffShape,
+				validation: distilled.validation,
+				provenance: {
+					prNumber: input.prNumber,
+					url: input.prUrl,
+					taskId: input.taskId,
+				},
+			});
 		}),
 
 	/**

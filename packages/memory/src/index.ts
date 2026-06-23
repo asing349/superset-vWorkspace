@@ -6,6 +6,7 @@
  * better-sqlite3 / fs work lives in host-service, never here.
  */
 
+export * from "./distill";
 export * from "./fingerprint";
 export * from "./path-to-area";
 export * from "./ranking";

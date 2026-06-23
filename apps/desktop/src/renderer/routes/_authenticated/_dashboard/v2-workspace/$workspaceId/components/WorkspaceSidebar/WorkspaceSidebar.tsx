@@ -6,10 +6,12 @@ import { Search } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { LuFile, LuGitCompareArrows } from "react-icons/lu";
 import { useWorkspaceGitStatus } from "renderer/routes/_authenticated/_dashboard/v2-workspace/$workspaceId/providers/WorkspaceGitStatusProvider";
+import { useWorkspace } from "renderer/routes/_authenticated/_dashboard/v2-workspace/providers/WorkspaceProvider";
 import { useCollections } from "renderer/routes/_authenticated/providers/CollectionsProvider";
 import { useSettings } from "renderer/stores/settings";
 import type { CommentPaneData, DiffFocusSide } from "../../types";
 import { FilesTab } from "./components/FilesTab";
+import { MemoryCapturePrompt } from "./components/MemoryCapturePrompt";
 import { PRActionHeader } from "./components/PRActionHeader";
 import { SidebarHeader } from "./components/SidebarHeader";
 import { useChangesTab } from "./hooks/useChangesTab";
@@ -89,6 +91,7 @@ export function WorkspaceSidebar({
 	workspaceId,
 }: WorkspaceSidebarProps) {
 	const gitStatus = useWorkspaceGitStatus();
+	const { workspace } = useWorkspace();
 	const collections = useCollections();
 	const { data: [localState] = [] } = useLiveQuery(
 		(query) =>
@@ -184,6 +187,11 @@ export function WorkspaceSidebar({
 				dispatch={dispatch}
 				onRetry={onRetry}
 				createPREnabled={CREATE_PR_BUTTON_ENABLED}
+			/>
+			<MemoryCapturePrompt
+				workspaceId={workspaceId}
+				projectId={workspace.projectId}
+				flowState={flowState}
 			/>
 			<SidebarHeader
 				tabs={tabs}

@@ -204,12 +204,27 @@ export interface PullRequestWorkspaceSnapshot {
 	lastFetchedAt: string | null;
 }
 
+/**
+ * Notified when a tracked PR first reaches a terminal state (merged/closed).
+ * Superset Memory (B2) uses this to confirm-on-merge / demote-on-close the
+ * provisional Playbook(s) captured for the PR. Optional + best-effort: the PR
+ * sync must never fail because of a memory-side error, so the runtime swallows
+ * any throw from this hook.
+ */
+export type PullRequestTerminalListener = (event: {
+	projectId: string;
+	prNumber: number;
+	terminalState: "merged" | "closed";
+}) => void;
+
 export interface PullRequestRuntimeManagerOptions {
 	db: HostDb;
 	execGh: ExecGh;
 	git: GitFactory;
 	github: () => Promise<Octokit>;
 	gitWatcher: GitWatcher;
+	/** B2 confirm-on-merge / demote-on-close hook (optional). */
+	onPullRequestTerminal?: PullRequestTerminalListener;
 }
 
 interface NormalizedRepoIdentity {
@@ -265,6 +280,7 @@ export class PullRequestRuntimeManager {
 	private readonly git: GitFactory;
 	private readonly github: () => Promise<Octokit>;
 	private readonly gitWatcher: GitWatcher;
+	private readonly onPullRequestTerminal?: PullRequestTerminalListener;
 	private safetyNetTimer: ReturnType<typeof setInterval> | null = null;
 	private projectRefreshTimer: ReturnType<typeof setInterval> | null = null;
 	private unsubscribeFromGitWatcher: (() => void) | null = null;
@@ -284,6 +300,43 @@ export class PullRequestRuntimeManager {
 		this.git = options.git;
 		this.github = options.github;
 		this.gitWatcher = options.gitWatcher;
+		this.onPullRequestTerminal = options.onPullRequestTerminal;
+	}
+
+	/**
+	 * Fire the B2 terminal-state hook when a PR FIRST reaches merged/closed.
+	 * Compares the previous state (if any) to the incoming one so each
+	 * transition notifies exactly once; first-sight terminal also fires (a PR
+	 * captured-at-open then merged before our first poll still reconciles).
+	 * Best-effort: any throw from the listener is swallowed.
+	 */
+	private notifyTerminalTransition({
+		projectId,
+		prNumber,
+		previousState,
+		nextState,
+	}: {
+		projectId: string;
+		prNumber: number;
+		previousState: PullRequestState | null;
+		nextState: PullRequestState;
+	}): void {
+		if (!this.onPullRequestTerminal) return;
+		if (nextState !== "merged" && nextState !== "closed") return;
+		// Only on the transition INTO this terminal state, not on every re-sync.
+		if (previousState === nextState) return;
+		try {
+			this.onPullRequestTerminal({
+				projectId,
+				prNumber,
+				terminalState: nextState,
+			});
+		} catch (error) {
+			console.warn(
+				"[host-service:pull-request-runtime] onPullRequestTerminal hook threw",
+				{ projectId, prNumber, nextState, error },
+			);
+		}
 	}
 
 	start() {
@@ -851,6 +904,15 @@ export class PullRequestRuntimeManager {
 				})
 				.run();
 		}
+
+		// B2: confirm-on-merge / demote-on-close. Compare prior → new state so a
+		// transition into merged/closed reconciles the captured Playbook(s) once.
+		this.notifyTerminalTransition({
+			projectId,
+			prNumber,
+			previousState: existing ? coercePullRequestState(existing.state) : null,
+			nextState: state,
+		});
 
 		return rowId;
 	}

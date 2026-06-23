@@ -7,10 +7,41 @@ import { drizzle } from "drizzle-orm/bun-sqlite";
 import { migrate } from "drizzle-orm/bun-sqlite/migrator";
 import type { HostDb } from "../../../db/index.ts";
 import * as schema from "../../../db/schema";
-import { projects } from "../../../db/schema";
+import { projects, workspaces } from "../../../db/schema";
 import { ProjectIndexService } from "../../../runtime/memory";
 import type { HostServiceContext } from "../../../types";
 import { memoryRouter } from "./memory";
+
+/**
+ * Minimal `SimpleGit` fake for `captureFromPR`: returns a name-status / numstat
+ * for `git diff` invocations and throws otherwise, so `resolveBaseComparison`
+ * degrades to the `HEAD~1...HEAD` fallback while the diff still yields files.
+ */
+function fakeGit() {
+	const NUL = "\0";
+	return {
+		raw: async (args: string[]) => {
+			if (args[0] === "diff" && args.includes("--name-status")) {
+				// "M\0packages/host-service/src/app.ts\0A\0apps/web/src/new.ts\0"
+				return [
+					"M",
+					"packages/host-service/src/app.ts",
+					"A",
+					"apps/web/src/new.ts",
+					"",
+				].join(NUL);
+			}
+			if (args[0] === "diff" && args.includes("--numstat")) {
+				return [
+					"10\t2\tpackages/host-service/src/app.ts",
+					"40\t0\tapps/web/src/new.ts",
+					"",
+				].join(NUL);
+			}
+			throw new Error("not supported in fake");
+		},
+	};
+}
 
 const MIGRATIONS_FOLDER = resolve(import.meta.dir, "../../../../drizzle");
 
@@ -51,6 +82,7 @@ describe("memoryRouter (B1 CRUD)", () => {
 		const ctx = {
 			db,
 			isAuthenticated: true,
+			git: async () => fakeGit(),
 			runtime: {
 				memoryIndex: new ProjectIndexService({ db }),
 			},
@@ -82,6 +114,47 @@ describe("memoryRouter (B1 CRUD)", () => {
 		expect(playbook.areaTags).toContain("backend");
 		expect(playbook.areaTags).toContain("schema");
 		expect(playbook.provenance.prNumber).toBe(42);
+	});
+
+	it("captureFromPR distills a provisional playbook from the LOCAL git diff", async () => {
+		const c = caller();
+		db.insert(workspaces)
+			.values({
+				id: "ws-1",
+				projectId,
+				worktreePath: "/tmp/repo/.worktrees/feat",
+				branch: "feat",
+			})
+			.run();
+
+		const playbook = await c.captureFromPR({
+			workspaceId: "ws-1",
+			projectId,
+			prNumber: 123,
+			prUrl: "https://github.com/o/r/pull/123",
+			prTitle: "Wire memory capture into the PR flow",
+			prBody: null,
+			commands: ["bun test packages/host-service"],
+			validation: "host-service suite green",
+		});
+
+		expect(playbook.status).toBe("provisional");
+		expect(playbook.confidence).toBe(0);
+		expect(playbook.intent).toBe("Wire memory capture into the PR flow");
+		// touchedPaths gathered from the (faked) local diff, sorted + de-duped.
+		expect(playbook.touchedPaths).toEqual([
+			"apps/web/src/new.ts",
+			"packages/host-service/src/app.ts",
+		]);
+		// Areas derived from the touched paths (multi-label).
+		expect(playbook.areaTags).toContain("backend");
+		expect(playbook.areaTags).toContain("frontend");
+		// diffShape carries the change shape (status tally + churn), never content.
+		expect(playbook.diffShape).toContain("2 files");
+		expect(playbook.diffShape).toContain("1 added");
+		expect(playbook.diffShape).toContain("1 modified");
+		expect(playbook.provenance.prNumber).toBe(123);
+		expect(playbook.provenance.url).toBe("https://github.com/o/r/pull/123");
 	});
 
 	it("lists and filters playbooks by status", async () => {
