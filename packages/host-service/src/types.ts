@@ -8,6 +8,7 @@ import type { ChatRuntimeManager } from "./runtime/chat";
 import type { WorkspaceFilesystemManager } from "./runtime/filesystem";
 import type { GitCredentialProvider, GitFactory } from "./runtime/git";
 import type {
+	MemoryConsolidationService,
 	MemoryRetrieveService,
 	ProjectIndexService,
 } from "./runtime/memory";
@@ -30,6 +31,8 @@ export interface HostServiceRuntime {
 	memoryIndex: ProjectIndexService;
 	/** Retrieval-bundle assembly + telemetry stats (Superset Memory B4). */
 	memoryRetrieve: MemoryRetrieveService;
+	/** Coding-Practice consolidation: propose/accept/revert (Superset Memory B5). */
+	memoryConsolidation: MemoryConsolidationService;
 }
 
 export interface HostServiceContext {

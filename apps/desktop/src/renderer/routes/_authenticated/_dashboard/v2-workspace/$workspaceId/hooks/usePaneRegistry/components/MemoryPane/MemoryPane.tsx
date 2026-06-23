@@ -4,8 +4,15 @@ import type { MemoryPaneData, PaneViewerData } from "../../../../types";
 import { MemoryPanelHeader } from "./components/MemoryPanelHeader";
 import { PlaybookDetail } from "./components/PlaybookDetail";
 import { PlaybookList } from "./components/PlaybookList";
+import { PracticeActions } from "./components/PracticeActions";
+import { PracticeSection } from "./components/PracticeSection";
 import { useMemoryPanel } from "./hooks/useMemoryPanel";
-import { type MemorySection, resolveSection } from "./utils/sections";
+import { usePracticeConsolidation } from "./hooks/usePracticeConsolidation";
+import {
+	isEnabledSection,
+	type MemorySection,
+	resolveSection,
+} from "./utils/sections";
 
 interface MemoryPaneProps {
 	context: RendererContext<PaneViewerData>;
@@ -32,9 +39,11 @@ export function MemoryPane({ context, projectId }: MemoryPaneProps) {
 
 	const setSection = useCallback(
 		(next: MemorySection) => {
-			// Only "playbooks" is persisted in pane data today; later milestones
-			// widen `MemoryPaneData.section`. resolveSection guards stale values.
-			if (next !== "playbooks") return;
+			// Persist only sections the data type supports today (playbooks +
+			// practice); B6/B7 widen `MemoryPaneData.section`. `isEnabledSection`
+			// guards against persisting a not-yet-shipped section.
+			if (!isEnabledSection(next)) return;
+			if (next !== "playbooks" && next !== "practice") return;
 			updateData({ ...data, section: next });
 		},
 		[data, updateData],
@@ -65,12 +74,19 @@ export function MemoryPane({ context, projectId }: MemoryPaneProps) {
 		[forgetPlaybook, selectedPlaybookId, setSelected],
 	);
 
+	const consolidation = usePracticeConsolidation({ projectId });
+
 	return (
 		<div className="flex h-full min-h-0 w-full flex-col bg-background">
 			<MemoryPanelHeader
 				savedStats={savedStats}
 				activeSection={section}
 				onSelectSection={setSection}
+				actions={
+					section === "practice" ? (
+						<PracticeActions consolidation={consolidation} />
+					) : null
+				}
 			/>
 			{section === "playbooks" ? (
 				<div className="flex min-h-0 flex-1">
@@ -90,6 +106,11 @@ export function MemoryPane({ context, projectId }: MemoryPaneProps) {
 							onForget={handleForget}
 						/>
 					</div>
+				</div>
+			) : null}
+			{section === "practice" ? (
+				<div className="min-h-0 flex-1">
+					<PracticeSection consolidation={consolidation} />
 				</div>
 			) : null}
 		</div>

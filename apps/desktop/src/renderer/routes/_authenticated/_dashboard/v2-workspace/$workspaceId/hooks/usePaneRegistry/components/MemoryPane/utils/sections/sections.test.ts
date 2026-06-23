@@ -7,13 +7,15 @@ import {
 } from "./sections";
 
 describe("memory sections", () => {
-	it("ships playbooks enabled and reserves later milestones as disabled", () => {
-		const playbooks = MEMORY_SECTIONS.find((s) => s.id === "playbooks");
-		expect(playbooks?.enabled).toBe(true);
-		// Future sections exist as disabled placeholders (the extensibility seam).
-		expect(MEMORY_SECTIONS.find((s) => s.id === "practice")?.enabled).toBe(
-			false,
+	it("ships playbooks + practice enabled and reserves later milestones as disabled", () => {
+		expect(MEMORY_SECTIONS.find((s) => s.id === "playbooks")?.enabled).toBe(
+			true,
 		);
+		// B5: practice is now enabled.
+		expect(MEMORY_SECTIONS.find((s) => s.id === "practice")?.enabled).toBe(
+			true,
+		);
+		// Future sections remain disabled placeholders (the extensibility seam).
 		expect(MEMORY_SECTIONS.find((s) => s.id === "graph")?.enabled).toBe(false);
 		expect(MEMORY_SECTIONS.find((s) => s.id === "settings")?.enabled).toBe(
 			false,

@@ -9,6 +9,7 @@ import type { HostDb } from "../../../db/index.ts";
 import * as schema from "../../../db/schema";
 import { projects, workspaces } from "../../../db/schema";
 import {
+	MemoryConsolidationService,
 	MemoryRetrieveService,
 	ProjectIndexService,
 } from "../../../runtime/memory";
@@ -59,13 +60,16 @@ function buildDb(): HostDb {
 describe("memoryRouter (B1 CRUD)", () => {
 	let db: HostDb;
 	let homeDir: string;
+	let repoDir: string;
 	let prevHomeEnv: string | undefined;
 	const projectId = "project-1";
 
 	beforeEach(() => {
 		db = buildDb();
-		// A real project row so the FK on memory_playbooks.project_id is satisfied.
-		db.insert(projects).values({ id: projectId, repoPath: "/tmp/repo" }).run();
+		// A real (TEMP) repo dir so B5 acceptPractice writes the project AGENTS.md
+		// into a sandbox, never the real repo.
+		repoDir = mkdtempSync(join(tmpdir(), "memory-repo-"));
+		db.insert(projects).values({ id: projectId, repoPath: repoDir }).run();
 		homeDir = mkdtempSync(join(tmpdir(), "memory-home-"));
 		prevHomeEnv = process.env.SUPERSET_HOME_DIR;
 		process.env.SUPERSET_HOME_DIR = homeDir;
@@ -78,6 +82,7 @@ describe("memoryRouter (B1 CRUD)", () => {
 			process.env.SUPERSET_HOME_DIR = prevHomeEnv;
 		}
 		rmSync(homeDir, { recursive: true, force: true });
+		rmSync(repoDir, { recursive: true, force: true });
 		(db as unknown as { $client?: { close: () => void } }).$client?.close();
 	});
 
@@ -89,6 +94,7 @@ describe("memoryRouter (B1 CRUD)", () => {
 			runtime: {
 				memoryIndex: new ProjectIndexService({ db }),
 				memoryRetrieve: new MemoryRetrieveService({ db }),
+				memoryConsolidation: new MemoryConsolidationService({ db }),
 			},
 		} as unknown as HostServiceContext;
 		return memoryRouter.createCaller(ctx);
@@ -233,13 +239,55 @@ describe("memoryRouter (B1 CRUD)", () => {
 		expect(idx.lastIndexedAt).toBeNull();
 	});
 
-	it("consolidatePractice stub returns a typed not-implemented shape", async () => {
+	it("consolidatePractice → acceptPractice → revertPractice round-trip (B5)", async () => {
 		const c = caller();
-		const consolidate = await c.consolidatePractice({
+		// Seed a confirmed playbook to consolidate.
+		const p = await c.capture({
+			projectId,
+			intent: "Prefer object params",
+			touchedPaths: ["packages/host-service/src/x.ts"],
+			provenance: { prNumber: 9, url: null, taskId: null },
+		});
+		await c.confirm({ id: p.id });
+
+		// PROPOSE — returns current/proposed/diff, writes nothing.
+		const proposal = await c.consolidatePractice({
 			scope: "project",
 			projectId,
 		});
-		expect(consolidate.milestone).toBe("B5");
+		expect(proposal.scope).toBe("project");
+		expect(proposal.sourceCount).toBe(1);
+		expect(proposal.proposedDoc).toContain("Prefer object params");
+		expect(proposal.currentDoc).toBe("");
+
+		// ACCEPT — version 1.
+		const v1 = await c.acceptPractice({
+			scope: "project",
+			projectId,
+			content: proposal.proposedDoc,
+			provenance: proposal.provenance,
+		});
+		expect(v1.version).toBe(1);
+
+		// getPractice now reflects the accepted content.
+		const doc = await c.getPractice({ scope: "project", projectId });
+		expect(doc.latest?.content).toContain("Prefer object params");
+
+		// Accept an edited v2, then revert → v3 with v1 content.
+		await c.acceptPractice({
+			scope: "project",
+			projectId,
+			content: "## edited\n\n- a different rule\n",
+		});
+		const reverted = await c.revertPractice({ scope: "project", projectId });
+		expect(reverted.version).toBe(3);
+		expect(reverted.content).toContain("Prefer object params");
+
+		const history = await c.listPracticeVersions({
+			scope: "project",
+			projectId,
+		});
+		expect(history.map((v) => v.version)).toEqual([3, 2, 1]);
 	});
 
 	it("retrieve assembles a bundle from captured + confirmed playbooks", async () => {

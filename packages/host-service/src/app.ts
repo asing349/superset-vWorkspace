@@ -18,6 +18,7 @@ import { createGitFactory } from "./runtime/git";
 import { runMainWorkspaceSweep } from "./runtime/main-workspace-sweep";
 import {
 	IndexRefreshWatcher,
+	MemoryConsolidationService,
 	MemoryRetrieveService,
 	ProjectIndexService,
 	reconcilePlaybooksForPr,
@@ -139,6 +140,8 @@ export function createApp(options: CreateAppOptions): CreateAppResult {
 	indexRefreshWatcher.start();
 	// Superset Memory (B4): retrieval-bundle assembly + token-savings telemetry.
 	const memoryRetrieve = new MemoryRetrieveService({ db });
+	// Superset Memory (B5): Coding-Practice consolidation — propose/accept/revert.
+	const memoryConsolidation = new MemoryConsolidationService({ db });
 	const chatRuntime =
 		options.chatRuntime ??
 		new ChatRuntimeManager({
@@ -157,6 +160,7 @@ export function createApp(options: CreateAppOptions): CreateAppResult {
 		pullRequests: pullRequestRuntime,
 		memoryIndex,
 		memoryRetrieve,
+		memoryConsolidation,
 	};
 	const app = new Hono();
 	const { injectWebSocket, upgradeWebSocket } = createNodeWebSocket({ app });

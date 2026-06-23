@@ -1,4 +1,9 @@
 export { gatherChangedFiles } from "./capture-gather.ts";
+export {
+	type ConsolidationProposal,
+	MemoryConsolidationService,
+	type MemoryConsolidationServiceOptions,
+} from "./consolidation-service.ts";
 export { IndexRefreshWatcher } from "./index-refresh-watcher.ts";
 export {
 	ProjectIndexService,

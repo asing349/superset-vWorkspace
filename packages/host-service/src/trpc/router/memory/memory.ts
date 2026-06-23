@@ -25,6 +25,7 @@ import {
 	workspaces,
 } from "../../../db/schema";
 import {
+	type ConsolidationProposal,
 	ensureMemoryRootDir,
 	gatherChangedFiles,
 	type ProjectIndexStatus,
@@ -238,23 +239,6 @@ function persistCapture(db: HostDb, input: MemoryCaptureInput): Playbook {
 		.run();
 	return readBackPlaybook(db, id);
 }
-
-// ---------------------------------------------------------------------------
-// Typed stub shapes — milestones B3/B4/B5. These return a typed
-// "not-implemented-here" result so callers/typecheck never break; each is
-// tagged with its owning milestone. Do NOT throw from a stub.
-// ---------------------------------------------------------------------------
-
-interface NotImplemented {
-	implemented: false;
-	/** The milestone that will implement this. */
-	milestone: string;
-}
-
-const notImplemented = (milestone: string): NotImplemented => ({
-	implemented: false,
-	milestone,
-});
 
 export const memoryRouter = router({
 	// --- Playbooks (REAL, table-backed) ------------------------------------
@@ -575,9 +559,15 @@ export const memoryRouter = router({
 			}),
 	}),
 
-	// --- Stubs for later milestones (typed, never throw) -------------------
+	// --- Consolidation (B5): propose / accept / revert ---------------------
 
-	/** STUB — B5 (consolidation): propose a reviewed diff to a Practice doc. */
+	/**
+	 * B5 — PROPOSE a consolidated Practice doc for review. Reads CONFIRMED
+	 * playbooks (project scope = this project; global scope = cross-project, only
+	 * patterns recurring across repos), distills them with the LOCAL/deterministic
+	 * heuristic (merge/dedupe/prune — NO model, NO network), and returns the
+	 * current doc + proposed doc + a line diff for the UI. Writes NOTHING.
+	 */
 	consolidatePractice: protectedProcedure
 		.input(
 			z.object({
@@ -585,7 +575,74 @@ export const memoryRouter = router({
 				projectId: z.string().nullable().default(null),
 			}),
 		)
-		.mutation((): NotImplemented => notImplemented("B5")),
+		.mutation(({ ctx, input }): ConsolidationProposal => {
+			return ctx.runtime.memoryConsolidation.propose({
+				scope: input.scope,
+				projectId: input.projectId,
+			});
+		}),
+
+	/**
+	 * B5 — ACCEPT a (possibly user-edited) Practice doc: write it to the target
+	 * (project = managed block in the repo's `AGENTS.md`; global =
+	 * `~/.superset/practice.md`) and record a new `memory_practice_versions` row.
+	 * The managed-block write never clobbers hand-written content.
+	 */
+	acceptPractice: protectedProcedure
+		.input(
+			z.object({
+				scope: practiceScopeSchema,
+				projectId: z.string().nullable().default(null),
+				content: z.string(),
+				provenance: z.string().nullable().default(null),
+			}),
+		)
+		.mutation(({ ctx, input }): PracticeVersion => {
+			return ctx.runtime.memoryConsolidation.accept({
+				scope: input.scope,
+				projectId: input.projectId,
+				content: input.content,
+				provenance: input.provenance,
+			});
+		}),
+
+	/**
+	 * B5 — REVERT to a prior (or specified) Practice version: restore its content
+	 * to the target file and record the restore as a NEW version (linear,
+	 * auditable history). Defaults to the version before the latest.
+	 */
+	revertPractice: protectedProcedure
+		.input(
+			z.object({
+				scope: practiceScopeSchema,
+				projectId: z.string().nullable().default(null),
+				toVersion: z.number().int().min(1).optional(),
+			}),
+		)
+		.mutation(({ ctx, input }): PracticeVersion => {
+			return ctx.runtime.memoryConsolidation.revert({
+				scope: input.scope,
+				projectId: input.projectId,
+				toVersion: input.toVersion,
+			});
+		}),
+
+	/** List Practice version history for a scope (newest first) — review/revert. */
+	listPracticeVersions: queryProcedure
+		.input(
+			z.object({
+				scope: practiceScopeSchema,
+				projectId: z.string().nullable().default(null),
+			}),
+		)
+		.query(({ ctx, input }): PracticeVersion[] => {
+			return ctx.runtime.memoryConsolidation.listVersions({
+				scope: input.scope,
+				projectId: input.projectId,
+			});
+		}),
+
+	// --- Project index (B3) + retrieval (B4), all REAL --------------------
 
 	/**
 	 * B3 — report the project index's build/freshness status: whether it's
