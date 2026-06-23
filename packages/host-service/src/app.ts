@@ -30,6 +30,10 @@ import {
 } from "./runtime/memory";
 import { PullRequestRuntimeManager } from "./runtime/pull-requests";
 import {
+	createApiTaskWriteback,
+	reconcileTicketRunForPr,
+} from "./runtime/ticket-runs";
+import {
 	createSqliteWorkspaceGroupStore,
 	WorkspaceGroupResolver,
 } from "./runtime/workspace-groups";
@@ -135,6 +139,21 @@ export function createApp(options: CreateAppOptions): CreateAppResult {
 			// generated `superset-memory` skill fresh for this project. Idempotent
 			// + best-effort (regen swallows its own errors).
 			regenerateMemorySkillForProject({ db, projectId });
+		},
+		// Wave-4 B6: close the ticket→PR loop. When an autonomous run's PR is
+		// first detected, match its head branch to a `ticket_runs.branch`, stamp
+		// the row's `pr_url`, and write the PR url + in-review status back to the
+		// cloud task (→ Linear via the existing outbound syncTask). Idempotent +
+		// best-effort: a PR with no matching run row is a no-op; writeback errors
+		// are swallowed inside the reconciler so PR sync never fails.
+		onPullRequestLinked: ({ projectId, headBranch, url }) => {
+			void reconcileTicketRunForPr({
+				db,
+				writeback: createApiTaskWriteback(api),
+				projectId,
+				headBranch,
+				prUrl: url,
+			});
 		},
 	});
 	pullRequestRuntime.start();

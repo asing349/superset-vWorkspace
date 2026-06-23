@@ -14,3 +14,11 @@ export {
 	type TicketRunResult,
 	type TicketRunStatus,
 } from "./dispatch.ts";
+export {
+	createApiTaskWriteback,
+	type ReconcileTicketRunResult,
+	reconcileTicketRunForPr,
+	resolveInReviewStatusId,
+	type TaskStatusOption,
+	type TicketTaskWriteback,
+} from "./pr-loop-reconciler.ts";

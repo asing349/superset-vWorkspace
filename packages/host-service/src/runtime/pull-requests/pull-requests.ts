@@ -217,6 +217,20 @@ export type PullRequestTerminalListener = (event: {
 	terminalState: "merged" | "closed";
 }) => void;
 
+/**
+ * Notified when a tracked PR is FIRST detected/linked (the row's first insert).
+ * Wave-4 B6 uses this to close the ticket→PR loop: match the PR's head branch
+ * to a `ticket_runs.branch`, record the `pr_url`, and write the PR url + status
+ * back to the cloud task (→ Linear). Optional + best-effort: the PR sync must
+ * never fail because of a writeback error, so the runtime swallows any throw.
+ */
+export type PullRequestLinkedListener = (event: {
+	projectId: string;
+	prNumber: number;
+	headBranch: string;
+	url: string;
+}) => void;
+
 export interface PullRequestRuntimeManagerOptions {
 	db: HostDb;
 	execGh: ExecGh;
@@ -225,6 +239,8 @@ export interface PullRequestRuntimeManagerOptions {
 	gitWatcher: GitWatcher;
 	/** B2 confirm-on-merge / demote-on-close hook (optional). */
 	onPullRequestTerminal?: PullRequestTerminalListener;
+	/** B6 on-first-detect hook — ticket→PR loop closure (optional). */
+	onPullRequestLinked?: PullRequestLinkedListener;
 }
 
 interface NormalizedRepoIdentity {
@@ -281,6 +297,7 @@ export class PullRequestRuntimeManager {
 	private readonly github: () => Promise<Octokit>;
 	private readonly gitWatcher: GitWatcher;
 	private readonly onPullRequestTerminal?: PullRequestTerminalListener;
+	private readonly onPullRequestLinked?: PullRequestLinkedListener;
 	private safetyNetTimer: ReturnType<typeof setInterval> | null = null;
 	private projectRefreshTimer: ReturnType<typeof setInterval> | null = null;
 	private unsubscribeFromGitWatcher: (() => void) | null = null;
@@ -301,6 +318,36 @@ export class PullRequestRuntimeManager {
 		this.github = options.github;
 		this.gitWatcher = options.gitWatcher;
 		this.onPullRequestTerminal = options.onPullRequestTerminal;
+		this.onPullRequestLinked = options.onPullRequestLinked;
+	}
+
+	/**
+	 * Fire the B6 on-detect hook when a PR row is FIRST inserted (first sight of
+	 * the PR for this project). Exactly-once on first detection: it fires only on
+	 * the insert branch of {@link upsertPullRequestRow}, never on later re-syncs.
+	 * Best-effort — any throw from the listener is swallowed so PR sync never
+	 * fails because of ticket-loop writeback.
+	 */
+	private notifyPullRequestLinked({
+		projectId,
+		prNumber,
+		headBranch,
+		url,
+	}: {
+		projectId: string;
+		prNumber: number;
+		headBranch: string;
+		url: string;
+	}): void {
+		if (!this.onPullRequestLinked) return;
+		try {
+			this.onPullRequestLinked({ projectId, prNumber, headBranch, url });
+		} catch (error) {
+			console.warn(
+				"[host-service:pull-request-runtime] onPullRequestLinked hook threw",
+				{ projectId, prNumber, error },
+			);
+		}
 	}
 
 	/**
@@ -903,6 +950,12 @@ export class PullRequestRuntimeManager {
 					...data,
 				})
 				.run();
+		}
+
+		// B6: ticket→PR loop closure. Fire on FIRST detection only (the insert
+		// branch) so a run's PR url + Linear status is written back exactly once.
+		if (!existing) {
+			this.notifyPullRequestLinked({ projectId, prNumber, headBranch, url });
 		}
 
 		// B2: confirm-on-merge / demote-on-close. Compare prior → new state so a
