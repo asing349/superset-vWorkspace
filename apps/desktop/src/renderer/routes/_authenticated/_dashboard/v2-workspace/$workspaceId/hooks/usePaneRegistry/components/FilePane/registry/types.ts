@@ -37,6 +37,15 @@ export interface ViewProps {
 	isActive: boolean;
 	onChangeView: (viewId: string) => void;
 	onForceView: (viewId: string) => void;
+	/**
+	 * 1-based line to scroll to + place the cursor on (A3). Set when the pane was
+	 * opened from a content-search / quick-open hit; undefined otherwise (open at
+	 * top). `focusColumn` is the 1-based column (defaults to 1); `focusTick`
+	 * changes on each request so re-selecting the same line re-scrolls.
+	 */
+	focusLine?: number;
+	focusColumn?: number;
+	focusTick?: number;
 }
 
 export function resolveViewLabel(view: FileView, filePath: string): string {

@@ -31,6 +31,10 @@ export function useGroupFileNavigation({
 		filePath: string;
 		rootId: string;
 		openInNewTab?: boolean;
+		/** 1-based line to focus on open (A3). */
+		focusLine?: number;
+		/** 1-based column paired with `focusLine`. */
+		focusColumn?: number;
 	}) => void;
 } {
 	const { roots } = useWorkspaceGroup();
@@ -44,17 +48,34 @@ export function useGroupFileNavigation({
 	}, [roots]);
 
 	const openFilePane = useCallback(
-		(input: { filePath: string; rootId: string; openInNewTab?: boolean }) => {
-			const { filePath, rootId, openInNewTab } = input;
+		(input: {
+			filePath: string;
+			rootId: string;
+			openInNewTab?: boolean;
+			focusLine?: number;
+			focusColumn?: number;
+		}) => {
+			const { filePath, rootId, openInNewTab, focusLine, focusColumn } = input;
 			const rootPath = rootPathById.get(rootId) ?? "";
 			const absoluteFilePath = rootPath
 				? toAbsoluteWorkspacePath(rootPath, filePath)
 				: filePath;
 
+			// A new focusTick each open makes the editor re-scroll even when the
+			// same file+line is re-selected (the focus effect keys off focusTick).
+			const focusFields: Pick<
+				FilePaneData,
+				"focusLine" | "focusColumn" | "focusTick"
+			> =
+				focusLine !== undefined
+					? { focusLine, focusColumn, focusTick: Date.now() }
+					: {};
+
 			const fileData: FilePaneData = {
 				filePath: absoluteFilePath,
 				mode: "editor",
 				rootId,
+				...focusFields,
 			};
 			const state = store.getState();
 
@@ -71,6 +92,17 @@ export function useGroupFileNavigation({
 						(pane.data as FilePaneData).filePath === absoluteFilePath &&
 						(pane.data as FilePaneData).rootId === rootId
 					) {
+						// Re-focus the requested line in the already-open pane by bumping
+						// its focus fields (a fresh focusTick re-triggers the scroll).
+						if (focusLine !== undefined) {
+							state.setPaneData({
+								paneId: pane.id,
+								data: {
+									...(pane.data as FilePaneData),
+									...focusFields,
+								} as PaneViewerData,
+							});
+						}
 						state.setActiveTab(tab.id);
 						state.setActivePane({ tabId: tab.id, paneId: pane.id });
 						return;

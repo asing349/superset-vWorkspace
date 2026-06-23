@@ -13,6 +13,21 @@ export interface FilePaneData {
 	 * service using the `{ groupId, rootId }` addressing.
 	 */
 	rootId?: string;
+	/**
+	 * 1-based line to scroll to + place the cursor on when the editor opens
+	 * (A3). Set by callers that know a target location — e.g. a content-search or
+	 * quick-open hit. Unset means "open at the top" (unchanged). Mirrors the
+	 * `DiffPaneData.focusLine`/`focusTick` pattern.
+	 */
+	focusLine?: number;
+	/** 1-based column paired with `focusLine`; defaults to column 1 when absent. */
+	focusColumn?: number;
+	/**
+	 * Bumped on each focus request so clicking the SAME line again re-scrolls
+	 * (the editor effect re-runs only when this changes). Mirrors
+	 * `DiffPaneData.focusTick`.
+	 */
+	focusTick?: number;
 }
 
 export interface TerminalPaneData {

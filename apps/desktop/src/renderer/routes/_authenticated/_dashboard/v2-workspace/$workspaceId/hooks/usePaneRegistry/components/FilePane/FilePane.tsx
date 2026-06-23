@@ -164,6 +164,9 @@ export function FilePane({ context, workspaceId, groupId }: FilePaneProps) {
 					isActive={context.isActive}
 					onChangeView={handleChangeView}
 					onForceView={handleForceView}
+					focusLine={data.focusLine}
+					focusColumn={data.focusColumn}
+					focusTick={data.focusTick}
 				/>
 			</div>
 		</div>

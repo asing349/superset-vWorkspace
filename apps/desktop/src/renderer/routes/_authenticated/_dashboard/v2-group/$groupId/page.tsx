@@ -83,16 +83,21 @@ function V2GroupPage() {
 	}, [roots.length]);
 	useHotkey("SEARCH_IN_FILES", openContentSearch);
 	const handleContentSearchSelect = useCallback(
-		(result: { absolutePath: string; rootId: string; line: number }) => {
-			// Open the matched file from its root. The result's path is already
-			// absolute and `rootId` routes FS reads to THAT root. Line-number focus on
-			// the editor is NOT wired today (FilePaneData has no focusLine field, and
-			// threading it through the v2-workspace editor view is out of M8 scope), so
-			// we open the file at its top; the user lands on the right file in the
-			// right root.
+		(result: {
+			absolutePath: string;
+			rootId: string;
+			line: number;
+			column: number;
+		}) => {
+			// Open the matched file from its root and focus the matched line (A3).
+			// The result's path is already absolute and `rootId` routes FS reads to
+			// THAT root; `focusLine`/`focusColumn` thread through to the editor's
+			// CodeView, which scrolls to + places the cursor on the hit.
 			openFilePane({
 				filePath: result.absolutePath,
 				rootId: result.rootId,
+				focusLine: result.line,
+				focusColumn: result.column,
 			});
 		},
 		[openFilePane],
