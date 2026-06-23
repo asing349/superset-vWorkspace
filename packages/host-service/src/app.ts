@@ -16,6 +16,7 @@ import { WorkspaceFilesystemManager } from "./runtime/filesystem";
 import type { GitCredentialProvider } from "./runtime/git";
 import { createGitFactory } from "./runtime/git";
 import { runMainWorkspaceSweep } from "./runtime/main-workspace-sweep";
+import { IndexRefreshWatcher, ProjectIndexService } from "./runtime/memory";
 import { PullRequestRuntimeManager } from "./runtime/pull-requests";
 import {
 	createSqliteWorkspaceGroupStore,
@@ -115,6 +116,15 @@ export function createApp(options: CreateAppOptions): CreateAppResult {
 		gitWatcher,
 	});
 	pullRequestRuntime.start();
+	// Superset Memory (B3): the lightweight per-project structural + lexical
+	// index, refreshed incrementally off the existing GitWatcher fs-event seam.
+	const memoryIndex = new ProjectIndexService({ db });
+	const indexRefreshWatcher = new IndexRefreshWatcher({
+		db,
+		indexService: memoryIndex,
+		gitWatcher,
+	});
+	indexRefreshWatcher.start();
 	const chatRuntime =
 		options.chatRuntime ??
 		new ChatRuntimeManager({
@@ -131,6 +141,7 @@ export function createApp(options: CreateAppOptions): CreateAppResult {
 		chat: chatRuntime,
 		filesystem,
 		pullRequests: pullRequestRuntime,
+		memoryIndex,
 	};
 	const app = new Hono();
 	const { injectWebSocket, upgradeWebSocket } = createNodeWebSocket({ app });
@@ -225,6 +236,11 @@ export function createApp(options: CreateAppOptions): CreateAppResult {
 			eventBus.close();
 		} catch (err) {
 			console.warn("[host-service] eventBus.close failed:", err);
+		}
+		try {
+			indexRefreshWatcher.stop();
+		} catch (err) {
+			console.warn("[host-service] indexRefreshWatcher.stop failed:", err);
 		}
 		try {
 			gitWatcher.close();

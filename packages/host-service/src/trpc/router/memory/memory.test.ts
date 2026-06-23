@@ -8,6 +8,7 @@ import { migrate } from "drizzle-orm/bun-sqlite/migrator";
 import type { HostDb } from "../../../db/index.ts";
 import * as schema from "../../../db/schema";
 import { projects } from "../../../db/schema";
+import { ProjectIndexService } from "../../../runtime/memory";
 import type { HostServiceContext } from "../../../types";
 import { memoryRouter } from "./memory";
 
@@ -50,6 +51,9 @@ describe("memoryRouter (B1 CRUD)", () => {
 		const ctx = {
 			db,
 			isAuthenticated: true,
+			runtime: {
+				memoryIndex: new ProjectIndexService({ db }),
+			},
 		} as unknown as HostServiceContext;
 		return memoryRouter.createCaller(ctx);
 	}
@@ -144,12 +148,16 @@ describe("memoryRouter (B1 CRUD)", () => {
 		expect(samples[0]?.observedValue).toBe(600);
 	});
 
-	it("stubs return typed not-implemented shapes without throwing", async () => {
+	it("indexStatus reports an empty index before any build", async () => {
 		const c = caller();
 		const idx = await c.indexStatus({ projectId });
-		expect(idx).toEqual({ implemented: false, milestone: "B3" });
-		const reindex = await c.reindex({ projectId });
-		expect(reindex.milestone).toBe("B3");
+		expect(idx.indexed).toBe(false);
+		expect(idx.entryCount).toBe(0);
+		expect(idx.lastIndexedAt).toBeNull();
+	});
+
+	it("remaining stubs return typed not-implemented shapes without throwing", async () => {
+		const c = caller();
 		const consolidate = await c.consolidatePractice({
 			scope: "project",
 			projectId,

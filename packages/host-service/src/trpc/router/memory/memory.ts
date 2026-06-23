@@ -7,6 +7,7 @@ import {
 	type PracticeDoc,
 	type PracticeScope,
 	type PracticeVersion,
+	type ProjectIndexEntry,
 	pathsToAreas,
 	redactAll,
 	redactText,
@@ -20,7 +21,10 @@ import {
 	memoryPracticeVersions,
 	memoryTelemetry,
 } from "../../../db/schema";
-import { ensureMemoryRootDir } from "../../../runtime/memory";
+import {
+	ensureMemoryRootDir,
+	type ProjectIndexStatus,
+} from "../../../runtime/memory";
 import { protectedProcedure, queryProcedure, router } from "../../index";
 
 // ---------------------------------------------------------------------------
@@ -501,15 +505,39 @@ export const memoryRouter = router({
 		)
 		.mutation((): NotImplemented => notImplemented("B5")),
 
-	/** STUB — B3 (project index): report index build/freshness status. */
+	/**
+	 * B3 — report the project index's build/freshness status: whether it's
+	 * indexed, entry count, last-indexed time, and the HEAD SHA on the newest
+	 * entries. B4 retrieval reads this to decide whether to (re)build first.
+	 */
 	indexStatus: queryProcedure
 		.input(z.object({ projectId: z.string().min(1) }))
-		.query((): NotImplemented => notImplemented("B3")),
+		.query(({ ctx, input }): ProjectIndexStatus => {
+			return ctx.runtime.memoryIndex.indexStatus(input.projectId);
+		}),
 
-	/** STUB — B3 (project index): (re)build the lightweight project index. */
+	/**
+	 * B3 — (re)build the lightweight project index for a project (structural map
+	 * + fingerprints). Idempotent; evicts entries for files that no longer exist.
+	 * Returns the resulting status.
+	 */
 	reindex: protectedProcedure
 		.input(z.object({ projectId: z.string().min(1) }))
-		.mutation((): NotImplemented => notImplemented("B3")),
+		.mutation(async ({ ctx, input }): Promise<ProjectIndexStatus> => {
+			await ctx.runtime.memoryIndex.buildProjectIndex(input.projectId);
+			return ctx.runtime.memoryIndex.indexStatus(input.projectId);
+		}),
+
+	/**
+	 * B3 — list the indexed entries for a project ("index slices" B4 retrieval
+	 * consumes). Each carries path, area tags, an exported-symbol summary, and a
+	 * fingerprint id.
+	 */
+	listIndexEntries: queryProcedure
+		.input(z.object({ projectId: z.string().min(1) }))
+		.query(({ ctx, input }): ProjectIndexEntry[] => {
+			return ctx.runtime.memoryIndex.listEntries(input.projectId);
+		}),
 
 	/** STUB — B4 (retrieval): assemble the memory bundle for an intent. */
 	retrieve: queryProcedure
