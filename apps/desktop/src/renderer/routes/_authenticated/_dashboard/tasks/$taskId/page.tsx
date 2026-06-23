@@ -20,6 +20,7 @@ import { ActivitySection } from "./components/ActivitySection";
 import { EditableTitle } from "./components/EditableTitle";
 import { PropertiesSidebar } from "./components/PropertiesSidebar";
 import { TaskDetailHeader } from "./components/TaskDetailHeader";
+import { TicketContextBuilder } from "./components/TicketContextBuilder";
 import { useEscapeToNavigate } from "./hooks/useEscapeToNavigate";
 
 export const Route = createFileRoute(
@@ -166,6 +167,20 @@ function TaskDetailPage() {
 						<MarkdownEditor
 							content={task.description ?? ""}
 							onSave={handleSaveDescription}
+						/>
+
+						<Separator className="my-8" />
+
+						<h2 className="text-lg font-semibold mb-4">Context for agent</h2>
+
+						<TicketContextBuilder
+							ticket={{
+								slug: task.slug,
+								title: task.title,
+								description: task.description ?? null,
+								externalKey: task.externalKey,
+								externalUrl: task.externalUrl,
+							}}
 						/>
 
 						{creatorName ? (
