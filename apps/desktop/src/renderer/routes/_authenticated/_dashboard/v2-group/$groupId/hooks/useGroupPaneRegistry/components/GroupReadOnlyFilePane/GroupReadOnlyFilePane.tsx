@@ -5,15 +5,15 @@ import {
 } from "../../../../../../v2-workspace/$workspaceId/state/fileDocumentStore";
 
 /**
- * Read-only file viewer for a `kind: "folder"` group root.
+ * Read-only file viewer for a group root that has no writable target.
  *
- * Folder-root writes are not supported by the host contract today (the
- * `filesystem.writeFile` mutation is `workspaceId`-addressed and folder roots
- * have no `workspaceId`), so folder-root files are surfaced read-only here
- * instead of through the editable `FilePane` save path. Reads still route via
- * `{ groupId, rootId }` (group addressing), so the content loads through the
- * correct root's FS service. When the host gains a folder-root write path, this
- * can be replaced by the editable `FilePane`.
+ * Since wave-2 M1 (host FS write procs accept `{ groupId, rootId }`) and wave-3
+ * A1 (group-explorer mutations), every root that RESOLVES on disk — workspace
+ * AND folder — is editable through `FilePane`. This pane is now used only for
+ * roots that do NOT resolve (`exists: false`, e.g. a deleted worktree) or an
+ * unknown/unmatched `rootId`: there is simply no FS service to write through.
+ * Reads still route via `{ groupId, rootId }` (group addressing) so any cached
+ * content can be displayed, but the root is surfaced as unavailable.
  */
 export function GroupReadOnlyFilePane({
 	filePath,
@@ -56,7 +56,7 @@ export function GroupReadOnlyFilePane({
 		<div className="flex h-full w-full flex-col">
 			<div className="flex shrink-0 items-center gap-1.5 border-b border-border bg-muted/40 px-3 py-1 text-[11px] text-muted-foreground select-text">
 				<LuLock className="size-3" />
-				Read-only — folder roots can't be edited yet
+				Read-only — this root is currently unavailable
 			</div>
 			<div className="min-h-0 min-w-0 flex-1">{body}</div>
 		</div>

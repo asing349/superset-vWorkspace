@@ -12,14 +12,9 @@ export type { GroupFileSearchResult } from "./utils/mergeFileSearchResults";
 const SEARCH_LIMIT_PER_ROOT = 50;
 const MERGED_RESULT_LIMIT = 50;
 
-// TODO(group-content-search): cross-root content search (fan out
-// `filesystem.searchContent` per root, merge with per-root labels) is deferred.
-// The host contract is already group-addressable (`{ groupId, rootId }`), so the
-// fan-out would mirror `useGroupFileSearch` exactly, but there is no existing v2
-// single-workspace content-search panel/sidebar tab to mirror its UX from, so
-// adding one is not "straightforward" per the task scope. The file-name
-// quick-open below is the required Q4 piece; content search is the secondary
-// nicety and is left for a follow-up that designs the panel UX.
+// Cross-root CONTENT search shipped in wave-2 M8 (`useGroupContentSearch` +
+// `GroupContentSearch`), which fans out `filesystem.searchContent` per root and
+// merges with per-root labels. This hook is the file-NAME quick-open sibling.
 
 /**
  * Cross-root quick-open search (Q4 fan-out-and-merge).

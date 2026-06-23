@@ -64,7 +64,7 @@ None blocking — the design decisions are recorded in the Decision Log and Assu
 ## Progress
 
 Part A — gap closure:
-- [ ] A1 — Group explorer file mutations (New/Rename/Delete/Move) for all group roots, via `{groupId,rootId}` writes.
+- [x] (2026-06-22) A1 — Group explorer file mutations (New/Rename/Delete/Move) for all group roots, via `{groupId,rootId}` writes. New `useGroupFilesTabActions` (writeFile/createDirectory/movePath/deletePath, `{workspaceId}` for workspace roots / `{groupId,rootId}` for folder roots); right-click context menu + inline rename on `GroupFileTreeRow`; New File/New Folder header buttons + root-level create placeholder + delete-confirm on `GroupFileTreeSection`; new `GroupTreeInlineInput`; pure `groupTreePaths` helpers (+tests). Live-refresh via existing fs:events/fs:groupEvents (no manual refetch). Commit `4f4459f6d`. Gates: typecheck 28/28, lint 0, groupTreePaths 11/11, v2-group suite 31/31.
 - [ ] A2 — Fix stale "folder roots can't be edited yet" banner + doc comment in `GroupReadOnlyFilePane`; remove stale `TODO(group-content-search)` comment.
 - [ ] A3 — Content-search / quick-open: focus the matched line on open (thread `focusLine`/`focusColumn` through pane data → editor).
 - [ ] A4 — `workspace-client` event-bus test harness (covers the wave-2 additive group-fs changes incl. the `maybeCleanupConnection` widening + reconnect re-send).
@@ -86,6 +86,11 @@ Timestamp each item when checked off; split partials into done/remaining.
 
 - Observation: The host can already write to any group root — Part A's explorer gap is purely renderer orchestration.
   Evidence: wave-2 `addressingSchema` covers all five FS write procs in `packages/host-service/src/trpc/router/filesystem/filesystem.ts`; the single-workspace explorer mutations (`useFilesTabActions`) just need a group-addressed sibling.
+
+- (A1) The group file explorer is a SIMPLE recursive tree off `useFileTree`, NOT the single-workspace Pierre tree. So `useFilesTabActions` (the named template) could only be mirrored at the *mutation+addressing* layer, not the inline-rename/create UI layer — Pierre's `model.startRenaming`/bridge has no group equivalent. A1 therefore added a small `GroupTreeInlineInput` + section-owned editing state to provide the inline create/rename UX the group tree previously lacked, while `useGroupFilesTabActions` faithfully mirrors `useFilesTabActions`'s mutations and `{workspaceId}|{groupId,rootId}` addressing. The group tree also works entirely in ABSOLUTE paths (vs the workspace tree's root-relative Pierre keys), so the path helpers are absolute-path-based (`groupTreePaths`).
+  Evidence: `GroupFilesTab/components/GroupFileTreeSection` + `GroupFileTreeRow` (recursive, non-Pierre); host write procs already group-addressable (`addressingSchema` in `packages/host-service/src/trpc/router/filesystem/filesystem.ts`).
+
+- (env) No shared `TaskUpdate`/`TaskList` tool is exposed in the finisher agent's toolset (only `TaskStop`/`SendMessage`/`EnterWorktree`). The shared task-board updates described in the per-milestone workflow could not be performed; this plan's living sections + per-milestone commits are the durable progress record instead.
 
 (Add observations as work proceeds.)
 
