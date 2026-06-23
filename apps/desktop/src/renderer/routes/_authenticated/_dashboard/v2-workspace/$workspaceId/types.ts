@@ -101,6 +101,20 @@ export interface CommentPaneData {
 	line?: number;
 }
 
+/**
+ * Superset Memory panel (B4b). One pane per workspace surfaces the local
+ * memory layer: the token-savings stat, the Playbook browser, and (later
+ * milestones) consolidation (B5), the graph (B6), and the embeddings toggle
+ * (B7). `section` selects which sub-tab is active so the pane is extensible
+ * without a rewrite; `selectedPlaybookId` remembers the open Playbook detail.
+ */
+export interface MemoryPaneData {
+	/** Active section/sub-tab. Only "playbooks" exists today; B6/B7 add more. */
+	section?: "playbooks";
+	/** The Playbook whose detail is open, if any. */
+	selectedPlaybookId?: string | null;
+}
+
 export type PaneViewerData =
 	| FilePaneData
 	| TerminalPaneData
@@ -108,4 +122,5 @@ export type PaneViewerData =
 	| BrowserPaneData
 	| DevtoolsPaneData
 	| DiffPaneData
-	| CommentPaneData;
+	| CommentPaneData
+	| MemoryPaneData;

@@ -8,10 +8,12 @@ import type {
 	CommentPaneData,
 	DiffFocusSide,
 	DiffPaneData,
+	MemoryPaneData,
 	PaneViewerData,
 	TerminalPaneData,
 } from "../../types";
 import type { TerminalLauncher } from "../useV2TerminalLauncher";
+import { findMemoryPane } from "./utils/findMemoryPane";
 
 export function useWorkspacePaneOpeners({
 	store,
@@ -37,6 +39,7 @@ export function useWorkspacePaneOpeners({
 	addChatTab: () => void;
 	addBrowserTab: () => void;
 	openCommentPane: (comment: CommentPaneData) => void;
+	openMemoryPane: () => void;
 } {
 	const openDiffPane = useCallback(
 		(
@@ -182,11 +185,32 @@ export function useWorkspacePaneOpeners({
 		[store],
 	);
 
+	const openMemoryPane = useCallback(() => {
+		const state = store.getState();
+		// Single Memory pane per workspace: focus the existing one if open,
+		// otherwise add a fresh tab. The panel is the long-lived home for B5/B6/B7.
+		const existing = findMemoryPane(state.tabs);
+		if (existing) {
+			state.setActiveTab(existing.tabId);
+			state.setActivePane(existing);
+			return;
+		}
+		state.addTab({
+			panes: [
+				{
+					kind: "memory",
+					data: { section: "playbooks" } as MemoryPaneData,
+				},
+			],
+		});
+	}, [store]);
+
 	return {
 		openDiffPane,
 		addTerminalTab,
 		addChatTab,
 		addBrowserTab,
 		openCommentPane,
+		openMemoryPane,
 	};
 }

@@ -8,7 +8,13 @@ import { alert } from "@superset/ui/atoms/Alert";
 import { toast } from "@superset/ui/sonner";
 import { cn } from "@superset/ui/utils";
 import { workspaceTrpc } from "@superset/workspace-client";
-import { Circle, GitCompareArrows, Globe, MessageSquare } from "lucide-react";
+import {
+	Brain,
+	Circle,
+	GitCompareArrows,
+	Globe,
+	MessageSquare,
+} from "lucide-react";
 import { useCallback, useMemo } from "react";
 import {
 	LuArrowDownToLine,
@@ -55,6 +61,7 @@ import { DiffPane } from "./components/DiffPane";
 import { DiffPaneHeaderExtras } from "./components/DiffPane/components/DiffPaneHeaderExtras";
 import { FilePane } from "./components/FilePane";
 import { FilePaneHeaderExtras } from "./components/FilePane/components/FilePaneHeaderExtras";
+import { MemoryPane } from "./components/MemoryPane";
 import { TerminalPane } from "./components/TerminalPane";
 import { TerminalPaneIcon } from "./components/TerminalPane/components/TerminalPaneIcon";
 import { TerminalSessionDropdown } from "./components/TerminalPane/components/TerminalSessionDropdown";
@@ -569,9 +576,21 @@ export function usePaneRegistry({
 					);
 				},
 			},
+			memory: {
+				getIcon: () => <Brain className="size-3.5" />,
+				getTitle: () => "Memory",
+				renderPane: (ctx: RendererContext<PaneViewerData>) => (
+					<MemoryPane context={ctx} projectId={workspace.projectId} />
+				),
+				contextMenuActions: (_ctx, defaults) =>
+					defaults.map((d) =>
+						d.key === "close-pane" ? { ...d, label: "Close Memory" } : d,
+					),
+			},
 		}),
 		[
 			workspaceId,
+			workspace.projectId,
 			groupId,
 			clearWorkspaceRunTerminal,
 			clearShortcut,

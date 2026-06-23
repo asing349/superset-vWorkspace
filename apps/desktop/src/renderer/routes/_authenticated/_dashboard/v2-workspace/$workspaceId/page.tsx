@@ -184,6 +184,7 @@ function V2WorkspaceContent() {
 		addChatTab,
 		addBrowserTab,
 		openCommentPane,
+		openMemoryPane,
 	} = useWorkspacePaneOpeners({
 		store,
 		launcher,
@@ -318,6 +319,7 @@ function V2WorkspaceContent() {
 									onAddTerminal={addTerminalTab}
 									onAddChat={addChatTab}
 									onAddBrowser={addBrowserTab}
+									onOpenMemory={openMemoryPane}
 									showPresetsBar={showPresetsBar}
 									onToggleShowPresetsBar={setShowPresetsBar}
 								/>
