@@ -63,7 +63,7 @@ Part A — leftovers:
 Part B — Linear ticket → autonomous PR:
 - [x] B1 (2026-06-23) — DONE. "Assigned to me" preset on TasksView (new `me` sentinel on the existing `assignee` slot; pure cache-first client predicate) with `assigneeId === session.user.id` primary + display-name/email fallback for unmatched Linear external assignees; post-login landing to `/tasks?assignee=me`. Reuses the tasks Electric collection + `task.list` assigneeMe + `useTasksData` + `AssigneeFilter`; no cloud schema change. desktop typecheck + biome clean; tasks-view 18/0 (10 new matcher tests). Commit `e2041da46`.
 - [ ] B2 — Ticket context builder (no cap) + ask-for-context prompt (optional/empty).
-- [ ] B3 — The one gate: review/edit/approve UI + persist the ticket-scoped approved context (host-side, top precedence).
+- [~] B3 (host half done 2026-06-23) — B3-host LANDED: host-local `approved_ticket_context` table (unique `(projectId,taskId)`, `taskId` = cloud id with no FK) + migration `0008_ticket_context.sql` + `ticketContext` tRPC router (`getApproved` → content|null; `saveApproved` upsert that REDACTS via `redactText` BEFORE persist = redaction point #1) composed into appRouter. 4 tests + 287 trpc-composition pass; typecheck + biome clean. Commit `3e059faf1`. Renderer review/edit/APPROVE UI (B3-renderer) still pending (needs B2).
 - [ ] B4 — Repo scoping + multi-repo confirm (default single; ask once if multi; assemble the multi-root group).
 - [ ] B5 — The ticket→PR orchestrator: assemble layered prompt → `workspaces.create({agents:[…]})` per repo → agent edits/commits/pushes/opens PR → STOP at PR open, NEVER merge; run row for status/error.
 - [ ] B6 — Close the loop: link PR↔workspace, write `prUrl` + move Linear status; multi-repo links all PRs to the one ticket.
