@@ -14,6 +14,7 @@ import { env } from "renderer/env.renderer";
 import { track } from "renderer/lib/analytics";
 import { setAuthToken } from "renderer/lib/auth-client";
 import { electronTrpc } from "renderer/lib/electron-trpc";
+import { MY_TICKETS_LANDING_SEARCH } from "renderer/routes/_authenticated/_dashboard/tasks/stores/tasks-filter-state";
 import { SupersetLogo } from "./components/SupersetLogo";
 import { useSessionRecovery } from "./hooks/useSessionRecovery";
 
@@ -31,7 +32,7 @@ function SignInPage() {
 
 	// Dev bypass: skip sign-in entirely
 	if (env.SKIP_ENV_VALIDATION) {
-		return <Navigate to="/workspace" replace />;
+		return <Navigate to="/tasks" search={MY_TICKETS_LANDING_SEARCH} replace />;
 	}
 
 	// Show loading while session is being fetched
@@ -43,9 +44,10 @@ function SignInPage() {
 		);
 	}
 
-	// If already signed in, redirect to workspace
+	// Post-login landing: drop the developer into "My tickets" (their assigned
+	// Linear tickets) so they can pick one to drive a ticket -> PR run.
 	if (session?.user) {
-		return <Navigate to="/workspace" replace />;
+		return <Navigate to="/tasks" search={MY_TICKETS_LANDING_SEARCH} replace />;
 	}
 
 	const signIn = (provider: AuthProvider) => {
@@ -105,7 +107,11 @@ function SignInPage() {
 			).toISOString();
 			await persistToken.mutateAsync({ token, expiresAt });
 			setAuthToken(token);
-			await navigate({ to: "/workspace", replace: true });
+			await navigate({
+				to: "/tasks",
+				search: MY_TICKETS_LANDING_SEARCH,
+				replace: true,
+			});
 		} catch (error) {
 			setDevError(
 				error instanceof Error ? error.message : "Dev sign-in failed",

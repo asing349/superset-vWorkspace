@@ -1,5 +1,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import { ASSIGNEE_FILTER_ME } from "../components/TasksView/utils/matchesAssignee";
+import type { TasksSearch } from "../layout";
 
 export type ViewMode = "table" | "board";
 export type TypeTab = "tasks" | "prs" | "issues";
@@ -56,6 +58,14 @@ export interface TasksFilters {
 	typeTab: TypeTab;
 	projectFilter: string | null;
 }
+
+/**
+ * Search params for the post-login "My tickets" landing — the Tasks view
+ * pre-filtered to tickets assigned to the signed-in user.
+ */
+export const MY_TICKETS_LANDING_SEARCH = {
+	assignee: ASSIGNEE_FILTER_ME,
+} satisfies TasksSearch;
 
 export function tasksSearchFromFilters(
 	filters: TasksFilters,

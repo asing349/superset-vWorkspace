@@ -6,8 +6,13 @@ import type {
 import { eq, isNull } from "@tanstack/db";
 import { useLiveQuery } from "@tanstack/react-db";
 import { useMemo } from "react";
+import { authClient } from "renderer/lib/auth-client";
 import { useCollections } from "renderer/routes/_authenticated/providers/CollectionsProvider";
 import type { TabValue } from "../../components/TasksTopBar";
+import {
+	ASSIGNEE_FILTER_ME,
+	matchesAssignedToMe,
+} from "../../utils/matchesAssignee";
 import { compareTasks } from "../../utils/sorting";
 import { useHybridSearch } from "../useHybridSearch";
 
@@ -31,6 +36,12 @@ export function useTasksData({
 	allStatuses: SelectTaskStatus[];
 } {
 	const collections = useCollections();
+	const { data: session } = authClient.useSession();
+	const currentUser = useMemo(() => {
+		const user = session?.user;
+		if (!user) return null;
+		return { id: user.id, email: user.email, name: user.name };
+	}, [session?.user]);
 
 	const { data: allData } = useLiveQuery(
 		(q) =>
@@ -102,6 +113,9 @@ export function useTasksData({
 
 		if (assigneeFilter) {
 			result = result.filter((task) => {
+				if (assigneeFilter === ASSIGNEE_FILTER_ME) {
+					return matchesAssignedToMe({ task, currentUser });
+				}
 				if (assigneeFilter === "unassigned") {
 					return task.assigneeId === null && task.assigneeExternalId === null;
 				}
@@ -113,7 +127,7 @@ export function useTasksData({
 		}
 
 		return result;
-	}, [searchedData, filterTab, assigneeFilter]);
+	}, [searchedData, filterTab, assigneeFilter, currentUser]);
 
 	return {
 		data: filteredData,

@@ -14,7 +14,9 @@ import { Popover, PopoverContent, PopoverTrigger } from "@superset/ui/popover";
 import { useLiveQuery } from "@tanstack/react-db";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { HiCheck, HiChevronDown, HiOutlineUserCircle } from "react-icons/hi2";
+import { authClient } from "renderer/lib/auth-client";
 import { useCollections } from "renderer/routes/_authenticated/providers/CollectionsProvider";
+import { ASSIGNEE_FILTER_ME } from "../../../../utils/matchesAssignee";
 
 type Tab = "all" | "internal" | "external";
 
@@ -25,6 +27,8 @@ interface AssigneeFilterProps {
 
 export function AssigneeFilter({ value, onChange }: AssigneeFilterProps) {
 	const collections = useCollections();
+	const { data: session } = authClient.useSession();
+	const currentUser = session?.user ?? null;
 	const [open, setOpen] = useState(false);
 	const [search, setSearch] = useState("");
 	const [tab, setTab] = useState<Tab>("all");
@@ -61,6 +65,15 @@ export function AssigneeFilter({ value, onChange }: AssigneeFilterProps) {
 
 	const selectedUser = useMemo(() => {
 		if (value === null) return null;
+		if (value === ASSIGNEE_FILTER_ME) {
+			return currentUser
+				? {
+						id: ASSIGNEE_FILTER_ME,
+						name: currentUser.name || "Me",
+						image: currentUser.image,
+					}
+				: { id: ASSIGNEE_FILTER_ME, name: "Me" };
+		}
 		if (value === "unassigned") return { id: "unassigned", name: "Unassigned" };
 		if (value.startsWith("ext:")) {
 			const extId = value.slice(4);
@@ -70,7 +83,7 @@ export function AssigneeFilter({ value, onChange }: AssigneeFilterProps) {
 				: null;
 		}
 		return users.find((u) => u.id === value) || null;
-	}, [value, users, externalAssignees]);
+	}, [value, users, externalAssignees, currentUser]);
 
 	const query = search.toLowerCase();
 
@@ -192,6 +205,21 @@ export function AssigneeFilter({ value, onChange }: AssigneeFilterProps) {
 							onScroll={checkScroll}
 						>
 							<CommandGroup>
+								{currentUser && (
+									<CommandItem
+										onSelect={() => handleSelect(ASSIGNEE_FILTER_ME)}
+									>
+										<Avatar
+											size="xs"
+											fullName={currentUser.name}
+											image={currentUser.image}
+										/>
+										<span className="text-sm">Assigned to me</span>
+										{value === ASSIGNEE_FILTER_ME && (
+											<HiCheck className="ml-auto size-3.5" />
+										)}
+									</CommandItem>
+								)}
 								<CommandItem onSelect={() => handleSelect(null)}>
 									<span className="text-sm">All assignees</span>
 									{value === null && <HiCheck className="ml-auto size-3.5" />}
