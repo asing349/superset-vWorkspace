@@ -21,6 +21,7 @@ import { EditableTitle } from "./components/EditableTitle";
 import { PropertiesSidebar } from "./components/PropertiesSidebar";
 import { TaskDetailHeader } from "./components/TaskDetailHeader";
 import { TicketContextBuilder } from "./components/TicketContextBuilder";
+import { TicketRunLauncher } from "./components/TicketRunLauncher";
 import { useEscapeToNavigate } from "./hooks/useEscapeToNavigate";
 
 export const Route = createFileRoute(
@@ -181,6 +182,15 @@ function TaskDetailPage() {
 								externalKey: task.externalKey,
 								externalUrl: task.externalUrl,
 							}}
+						/>
+
+						<Separator className="my-8" />
+
+						<h2 className="text-lg font-semibold mb-4">Autonomous run</h2>
+
+						<TicketRunLauncher
+							taskId={task.id}
+							ticketKey={task.externalKey ?? task.slug}
 						/>
 
 						{creatorName ? (
