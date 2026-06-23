@@ -39,6 +39,19 @@ export interface BundleIndexSlice {
 	score: number;
 }
 
+/**
+ * A semantically-retrieved slice (B7). Only present when local embeddings are
+ * enabled+available; the host supplies these pre-ranked by cosine similarity.
+ * Identical in shape to an index slice plus the similarity score so the agent
+ * can tell semantic recall from lexical/area recall.
+ */
+export interface BundleSemanticSlice {
+	path: string;
+	summary: string | null;
+	/** Cosine similarity to the query embedding, in [-1, 1]. */
+	similarity: number;
+}
+
 /** The assembled retrieval bundle returned to the agent (over MCP or push). */
 export interface RetrievalBundle {
 	/** Areas the query resolved to (derived from intent + explicit areas). */
@@ -46,6 +59,12 @@ export interface RetrievalBundle {
 	practices: PracticeSlice[];
 	playbooks: BundlePlaybook[];
 	indexSlices: BundleIndexSlice[];
+	/**
+	 * Semantic recall slices (B7). Empty unless local embeddings are
+	 * enabled+available — when off this is always `[]` and the rest of the
+	 * bundle is identical to the lexical/area-only result.
+	 */
+	semanticSlices: BundleSemanticSlice[];
 	/** Estimated tokens of the (possibly trimmed) bundle. */
 	estimatedTokens: number;
 	/** Estimated tokens BEFORE the size cap trimmed anything. */
@@ -64,6 +83,12 @@ export interface AssembleBundleInput {
 	indexEntries: readonly ProjectIndexEntry[];
 	/** Practice docs to include verbatim (already scope-resolved). */
 	practices?: readonly PracticeSlice[];
+	/**
+	 * Pre-ranked semantic slices (B7). Supplied by the host ONLY when local
+	 * embeddings are enabled+available; omitted/empty otherwise (→ off path is
+	 * byte-identical to the lexical/area-only bundle, minus the empty array).
+	 */
+	semanticSlices?: readonly BundleSemanticSlice[];
 	/** Max playbooks to keep after ranking. Default 5. */
 	topKPlaybooks?: number;
 	/** Max index slices to keep after ranking. Default 10. */
@@ -154,6 +179,10 @@ function indexSliceTokens(slice: BundleIndexSlice): number {
 	return estimateTokens(`${slice.path} ${slice.summary ?? ""}`);
 }
 
+function semanticSliceTokens(slice: BundleSemanticSlice): number {
+	return estimateTokens(`${slice.path} ${slice.summary ?? ""}`);
+}
+
 function practiceTokens(slice: PracticeSlice): number {
 	return estimateTokens(slice.content);
 }
@@ -206,6 +235,9 @@ export function assembleRetrievalBundle(
 	}));
 
 	const practices = [...(input.practices ?? [])];
+	// Semantic slices arrive pre-ranked (highest similarity first). Empty when
+	// embeddings are off → the off path produces the same bundle as before B7.
+	const semantic = [...(input.semanticSlices ?? [])];
 
 	// Token accounting before the cap.
 	const practiceTotal = practices.reduce(
@@ -220,21 +252,33 @@ export function assembleRetrievalBundle(
 		(sum, s) => sum + indexSliceTokens(s),
 		0,
 	);
-	const estimatedTokensBeforeCap = practiceTotal + playbookTotal + indexTotal;
+	const semanticTotal = semantic.reduce(
+		(sum, s) => sum + semanticSliceTokens(s),
+		0,
+	);
+	const estimatedTokensBeforeCap =
+		practiceTotal + playbookTotal + indexTotal + semanticTotal;
 
-	// Trim to budget: drop lowest-ranked index slices first, then lowest-ranked
-	// playbooks. Practices are kept (durable, highest-signal) unless they alone
-	// blow the budget — then trim them last, lowest-version first.
+	// Trim to budget: drop lowest-ranked SEMANTIC slices first, then lexical
+	// index slices, then lowest-ranked playbooks. Practices are kept (durable,
+	// highest-signal) unless they alone blow the budget — then trim them last,
+	// lowest-version first.
 	let keptPlaybooks = rankedPlaybooks;
 	let keptIndex = rankedIndex;
+	let keptSemantic = semantic;
 	let keptPractices = practices;
 	let trimmed = false;
 
 	const total = () =>
 		keptPractices.reduce((s, p) => s + practiceTokens(p), 0) +
 		keptPlaybooks.reduce((s, p) => s + playbookTokens(p), 0) +
-		keptIndex.reduce((s, p) => s + indexSliceTokens(p), 0);
+		keptIndex.reduce((s, p) => s + indexSliceTokens(p), 0) +
+		keptSemantic.reduce((s, p) => s + semanticSliceTokens(p), 0);
 
+	while (total() > maxTokens && keptSemantic.length > 0) {
+		keptSemantic = keptSemantic.slice(0, -1);
+		trimmed = true;
+	}
 	while (total() > maxTokens && keptIndex.length > 0) {
 		keptIndex = keptIndex.slice(0, -1);
 		trimmed = true;
@@ -253,6 +297,7 @@ export function assembleRetrievalBundle(
 		practices: keptPractices,
 		playbooks: keptPlaybooks,
 		indexSlices: keptIndex,
+		semanticSlices: keptSemantic,
 		estimatedTokens: total(),
 		estimatedTokensBeforeCap,
 		trimmed,

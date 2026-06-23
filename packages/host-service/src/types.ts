@@ -9,6 +9,7 @@ import type { WorkspaceFilesystemManager } from "./runtime/filesystem";
 import type { GitCredentialProvider, GitFactory } from "./runtime/git";
 import type {
 	MemoryConsolidationService,
+	MemoryEmbeddingsService,
 	MemoryRetrieveService,
 	MemoryVaultService,
 	ProjectIndexService,
@@ -36,6 +37,8 @@ export interface HostServiceRuntime {
 	memoryConsolidation: MemoryConsolidationService;
 	/** Obsidian vault generation + knowledge-graph data (Superset Memory B6). */
 	memoryVault: MemoryVaultService;
+	/** Optional local semantic embeddings (off by default; Superset Memory B7). */
+	memoryEmbeddings: MemoryEmbeddingsService;
 }
 
 export interface HostServiceContext {

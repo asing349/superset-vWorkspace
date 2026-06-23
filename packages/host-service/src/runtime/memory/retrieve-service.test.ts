@@ -72,7 +72,7 @@ describe("MemoryRetrieveService (B4 host)", () => {
 		return id;
 	}
 
-	it("assembles a bundle: practice + area-filtered playbooks + index slices", () => {
+	it("assembles a bundle: practice + area-filtered playbooks + index slices", async () => {
 		seedPlaybook({
 			id: "pb-backend",
 			areaTagsJson: JSON.stringify(["backend"]),
@@ -105,7 +105,7 @@ describe("MemoryRetrieveService (B4 host)", () => {
 			.run();
 
 		const service = new MemoryRetrieveService({ db });
-		const bundle = service.retrieve({
+		const bundle = await service.retrieve({
 			projectId,
 			intent: "work on the backend route",
 		});
@@ -117,25 +117,29 @@ describe("MemoryRetrieveService (B4 host)", () => {
 		expect(bundle.practices.some((p) => p.scope === "project")).toBe(true);
 	});
 
-	it("excludes provisional playbooks unless asked", () => {
+	it("excludes provisional playbooks unless asked", async () => {
 		seedPlaybook({ id: "prov", status: "provisional" });
 		const service = new MemoryRetrieveService({ db });
 		expect(
-			service
-				.retrieve({ projectId, intent: "backend" })
-				.playbooks.some((p) => p.id === "prov"),
+			(await service.retrieve({ projectId, intent: "backend" })).playbooks.some(
+				(p) => p.id === "prov",
+			),
 		).toBe(false);
 		expect(
-			service
-				.retrieve({ projectId, intent: "backend", includeProvisional: true })
-				.playbooks.some((p) => p.id === "prov"),
+			(
+				await service.retrieve({
+					projectId,
+					intent: "backend",
+					includeProvisional: true,
+				})
+			).playbooks.some((p) => p.id === "prov"),
 		).toBe(true);
 	});
 
-	it("records a retrieval_tokens telemetry sample by default", () => {
+	it("records a retrieval_tokens telemetry sample by default", async () => {
 		seedPlaybook({ id: "pb1" });
 		const service = new MemoryRetrieveService({ db });
-		service.retrieve({ projectId, intent: "backend" });
+		await service.retrieve({ projectId, intent: "backend" });
 		const stats = service.savedStats({ projectId });
 		// retrieval_tokens has no baseline → 0% saved but the sample exists.
 		expect(stats.some((s) => s.metric === "retrieval_tokens")).toBe(true);

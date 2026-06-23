@@ -156,4 +156,47 @@ describe("assembleRetrievalBundle", () => {
 		expect(bundle.queryAreas).toEqual(["other"]);
 		expect(bundle.playbooks).toHaveLength(1);
 	});
+
+	it("semanticSlices is [] when none supplied (embeddings off = unchanged bundle)", () => {
+		const bundle = assembleRetrievalBundle({
+			intent: "backend",
+			playbooks: [],
+			indexEntries: [],
+			now,
+		});
+		expect(bundle.semanticSlices).toEqual([]);
+	});
+
+	it("blends supplied semantic slices into the bundle (B7 enabled path)", () => {
+		const bundle = assembleRetrievalBundle({
+			intent: "backend",
+			playbooks: [],
+			indexEntries: [],
+			semanticSlices: [
+				{ path: "a/sem.ts", summary: "[backend]", similarity: 0.8 },
+			],
+			now,
+		});
+		expect(bundle.semanticSlices.map((s) => s.path)).toEqual(["a/sem.ts"]);
+	});
+
+	it("trims semantic slices FIRST under the token cap", () => {
+		const bundle = assembleRetrievalBundle({
+			intent: "backend",
+			playbooks: [playbook({ id: "keep", areaTags: ["backend"] })],
+			indexEntries: [],
+			semanticSlices: Array.from({ length: 6 }, (_, i) => ({
+				path: `a/sem${i}.ts`,
+				summary: "x".repeat(400),
+				similarity: 0.5,
+			})),
+			maxTokens: 200,
+			now,
+		});
+		expect(bundle.trimmed).toBe(true);
+		expect(bundle.estimatedTokens).toBeLessThanOrEqual(200);
+		// Semantic slices trimmed before the playbook survives.
+		expect(bundle.semanticSlices.length).toBeLessThan(6);
+		expect(bundle.playbooks.some((p) => p.id === "keep")).toBe(true);
+	});
 });

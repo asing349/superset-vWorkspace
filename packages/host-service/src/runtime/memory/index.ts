@@ -4,6 +4,15 @@ export {
 	MemoryConsolidationService,
 	type MemoryConsolidationServiceOptions,
 } from "./consolidation-service.ts";
+export {
+	createOllamaEmbeddingsClient,
+	type EmbeddingsClient,
+	type EmbeddingsServiceOptions,
+	type EmbeddingsSettings,
+	type EmbeddingsStatus,
+	MemoryEmbeddingsService,
+	type SemanticMatch,
+} from "./embeddings-service.ts";
 export { IndexRefreshWatcher } from "./index-refresh-watcher.ts";
 export {
 	ProjectIndexService,

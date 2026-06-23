@@ -8,6 +8,7 @@
 
 export * from "./consolidation";
 export * from "./distill";
+export * from "./embeddings";
 export * from "./fingerprint";
 export * from "./graph";
 export * from "./path-to-area";

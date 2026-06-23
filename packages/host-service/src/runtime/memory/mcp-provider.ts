@@ -29,7 +29,7 @@ export class HostMemoryDataProvider implements MemoryDataProvider {
 	}
 
 	async search(input: MemorySearchInput): Promise<MemorySearchResult> {
-		const bundle = this.retrieve.retrieve({
+		const bundle = await this.retrieve.retrieve({
 			projectId: input.projectId ?? null,
 			intent: input.intent,
 			areaTags: input.areaTags as AreaTag[] | undefined,

@@ -27,6 +27,8 @@ import {
 } from "../../../db/schema";
 import {
 	type ConsolidationProposal,
+	type EmbeddingsSettings,
+	type EmbeddingsStatus,
 	ensureMemoryRootDir,
 	gatherChangedFiles,
 	type ProjectIndexStatus,
@@ -732,7 +734,7 @@ export const memoryRouter = router({
 				includeProvisional: z.boolean().default(false),
 			}),
 		)
-		.query(({ ctx, input }): RetrieveResult => {
+		.query(({ ctx, input }): Promise<RetrieveResult> => {
 			return ctx.runtime.memoryRetrieve.retrieve({
 				projectId: input.projectId,
 				intent: input.intent,
@@ -761,4 +763,65 @@ export const memoryRouter = router({
 				limit: input.limit,
 			});
 		}),
+
+	/**
+	 * B7 — optional local semantic embeddings status. Reports whether a LOCAL
+	 * model is detected (only probed when enabled — disabled ⇒ no network),
+	 * whether the toggle is on, the (loopback) endpoint, model, and how many
+	 * files are embedded for the project. B7b's settings toggle reads this.
+	 */
+	embeddingsStatus: queryProcedure
+		.input(
+			z.object({ projectId: z.string().nullable().default(null) }).optional(),
+		)
+		.query(({ ctx, input }): Promise<EmbeddingsStatus> => {
+			return ctx.runtime.memoryEmbeddings.status(input?.projectId ?? null);
+		}),
+
+	/**
+	 * B7 — persist the embeddings on/off toggle (+ optional loopback endpoint /
+	 * model). A non-loopback endpoint is REJECTED (loopback-only). OFF by default.
+	 */
+	setEmbeddingsEnabled: protectedProcedure
+		.input(
+			z.object({
+				enabled: z.boolean(),
+				endpoint: z.string().url().optional(),
+				model: z.string().min(1).optional(),
+			}),
+		)
+		.mutation(({ ctx, input }): EmbeddingsSettings => {
+			try {
+				return ctx.runtime.memoryEmbeddings.setSettings({
+					enabled: input.enabled,
+					endpoint: input.endpoint,
+					model: input.model,
+				});
+			} catch (error) {
+				throw new TRPCError({
+					code: "BAD_REQUEST",
+					message:
+						error instanceof Error
+							? error.message
+							: "Invalid embeddings settings",
+				});
+			}
+		}),
+
+	/**
+	 * B7 — (re)build embeddings for a project (fingerprint-driven: only changed
+	 * files are re-embedded; deleted files evict). NO-OP returning zeros when
+	 * disabled or no local model is available — so this NEVER egresses unless the
+	 * user enabled embeddings AND a local model is up.
+	 */
+	reindexEmbeddings: protectedProcedure
+		.input(z.object({ projectId: z.string().min(1) }))
+		.mutation(
+			({
+				ctx,
+				input,
+			}): Promise<{ embedded: number; evicted: number; skipped: boolean }> => {
+				return ctx.runtime.memoryEmbeddings.reindex(input.projectId);
+			},
+		),
 });

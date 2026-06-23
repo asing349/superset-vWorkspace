@@ -19,6 +19,7 @@ import { runMainWorkspaceSweep } from "./runtime/main-workspace-sweep";
 import {
 	IndexRefreshWatcher,
 	MemoryConsolidationService,
+	MemoryEmbeddingsService,
 	MemoryRetrieveService,
 	MemoryVaultService,
 	ProjectIndexService,
@@ -139,8 +140,15 @@ export function createApp(options: CreateAppOptions): CreateAppResult {
 		gitWatcher,
 	});
 	indexRefreshWatcher.start();
+	// Superset Memory (B7): optional local semantic embeddings. OFF BY DEFAULT;
+	// when off OR no local model is detected, ZERO network calls occur.
+	const memoryEmbeddings = new MemoryEmbeddingsService({ db });
 	// Superset Memory (B4): retrieval-bundle assembly + token-savings telemetry.
-	const memoryRetrieve = new MemoryRetrieveService({ db });
+	// Blends semantic recall from `memoryEmbeddings` only when enabled+available.
+	const memoryRetrieve = new MemoryRetrieveService({
+		db,
+		embeddings: memoryEmbeddings,
+	});
 	// Superset Memory (B5): Coding-Practice consolidation — propose/accept/revert.
 	const memoryConsolidation = new MemoryConsolidationService({ db });
 	// Superset Memory (B6): Obsidian vault generation + knowledge-graph data.
@@ -165,6 +173,7 @@ export function createApp(options: CreateAppOptions): CreateAppResult {
 		memoryRetrieve,
 		memoryConsolidation,
 		memoryVault,
+		memoryEmbeddings,
 	};
 	const app = new Hono();
 	const { injectWebSocket, upgradeWebSocket } = createNodeWebSocket({ app });

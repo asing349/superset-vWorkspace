@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import {
 	type AreaTag,
 	assembleRetrievalBundle,
+	type BundleSemanticSlice,
 	computeSavedStats,
 	type MemoryTelemetrySample,
 	type Playbook,
@@ -22,6 +23,7 @@ import {
 	memoryProjectIndex,
 	memoryTelemetry,
 } from "../../db/schema.ts";
+import type { MemoryEmbeddingsService } from "./embeddings-service.ts";
 
 /**
  * Retrieval + telemetry service (B4 host half). Reads the memory tables, builds
@@ -42,6 +44,8 @@ export interface RetrieveInput {
 	includeProvisional?: boolean;
 	/** Record a telemetry sample for this retrieval. Default true. */
 	recordTelemetry?: boolean;
+	/** Max semantic slices to blend (B7). Default 5; ignored when off. */
+	topKSemantic?: number;
 }
 
 export interface RetrieveResult extends RetrievalBundle {
@@ -127,9 +131,15 @@ function rowToPlaybook(row: typeof memoryPlaybooks.$inferSelect): Playbook {
 
 export class MemoryRetrieveService {
 	private readonly db: HostDb;
+	/** Optional local-embeddings service (B7); when absent, semantic recall is off. */
+	private readonly embeddings: MemoryEmbeddingsService | undefined;
 
-	constructor(options: { db: HostDb }) {
+	constructor(options: {
+		db: HostDb;
+		embeddings?: MemoryEmbeddingsService;
+	}) {
 		this.db = options.db;
+		this.embeddings = options.embeddings;
 	}
 
 	/** Read the latest practice version for a scope (null when none). */
@@ -239,17 +249,51 @@ export class MemoryRetrieveService {
 	}
 
 	/**
+	 * Semantic recall slices (B7). Empty (and ZERO network) unless local
+	 * embeddings are enabled+available. Reuses summaries from the already-loaded
+	 * index entries so the slices carry the same "where X lives" context.
+	 */
+	private async loadSemanticSlices(options: {
+		projectId: string | null;
+		intent: string;
+		indexEntries: readonly ProjectIndexEntry[];
+		topK?: number;
+	}): Promise<BundleSemanticSlice[]> {
+		if (!this.embeddings || options.projectId === null) return [];
+		const matches = await this.embeddings.semanticSearch({
+			projectId: options.projectId,
+			query: options.intent,
+			topK: options.topK ?? 5,
+		});
+		if (matches.length === 0) return [];
+		const summaryByPath = new Map(
+			options.indexEntries.map((e) => [e.path, e.summary]),
+		);
+		return matches.map((m) => ({
+			path: m.path,
+			summary: summaryByPath.get(m.path) ?? null,
+			similarity: m.similarity,
+		}));
+	}
+
+	/**
 	 * Assemble the retrieval bundle for an intent and (by default) record a
 	 * telemetry sample of the tokens injected. Pure assembly is delegated to
 	 * `@superset/memory`; this method only loads + records.
+	 *
+	 * When local embeddings (B7) are enabled+available, semantic recall is blended
+	 * in via `semanticSlices`; when off/unavailable the bundle is identical to the
+	 * lexical/area-only result and NO network call is made (the embeddings service
+	 * short-circuits before any fetch).
 	 */
-	retrieve(input: RetrieveInput): RetrieveResult {
+	async retrieve(input: RetrieveInput): Promise<RetrieveResult> {
 		const {
 			projectId,
 			intent,
 			areaTags,
 			topKPlaybooks,
 			topKIndexSlices,
+			topKSemantic,
 			maxTokens,
 			includeProvisional = false,
 			recordTelemetry = true,
@@ -258,6 +302,12 @@ export class MemoryRetrieveService {
 		const playbooks = this.loadPlaybooks({ projectId, includeProvisional });
 		const indexEntries = this.loadIndexEntries(projectId);
 		const practices = this.loadPractices(projectId);
+		const semanticSlices = await this.loadSemanticSlices({
+			projectId,
+			intent,
+			indexEntries,
+			topK: topKSemantic,
+		});
 
 		const bundle = assembleRetrievalBundle({
 			intent,
@@ -265,6 +315,7 @@ export class MemoryRetrieveService {
 			playbooks,
 			indexEntries,
 			practices,
+			semanticSlices,
 			topKPlaybooks,
 			topKIndexSlices,
 			maxTokens,
