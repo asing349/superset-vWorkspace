@@ -126,4 +126,11 @@ export interface PrReviewGuide {
 	 * memory); false when the guide is the deterministic diff-only baseline.
 	 */
 	grounded: boolean;
+	/**
+	 * True when a local AI session enriched the deterministic skeleton (M4);
+	 * absent/false when the guide is the deterministic + grounded baseline only.
+	 * Enrichment NEVER alters anchors — only adds prose — so the renderer can
+	 * trust anchors regardless of this flag.
+	 */
+	enriched?: boolean;
 }

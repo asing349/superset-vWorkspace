@@ -8,6 +8,28 @@ export {
 	type GuidePracticePort,
 	type GuideRetrievePort,
 } from "./build-guide-skeleton.ts";
+export {
+	buildEnrichmentPrompt,
+	type EnrichGuideInput,
+	enrichGuide,
+	type GuideEnrichmentSession,
+	mergeEnrichment,
+	parseEnrichmentReply,
+} from "./enrich-guide.ts";
+export {
+	buildGroundingServices,
+	type GenerateGuideCoreInput,
+	type GenerateGuideInput,
+	type GuideCacheSink,
+	type GuideDiffSource,
+	type GuideMemoryIndex,
+	type GuideMemoryRetrieve,
+	generateGuide,
+	generateGuideCore,
+	getCachedGuide,
+	normalizeFileStatus,
+	toGuideDiffInput,
+} from "./generate-guide.ts";
 export type {
 	GuideAnchor,
 	GuideItem,
