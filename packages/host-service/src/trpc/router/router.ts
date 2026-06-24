@@ -14,6 +14,7 @@ import { issuesRouter } from "./issues";
 import { memoryRouter } from "./memory";
 import { notificationsRouter } from "./notifications";
 import { portsRouter } from "./ports";
+import { prReviewRouter } from "./pr-review";
 import { projectRouter } from "./project";
 import { pullRequestsRouter } from "./pull-requests";
 import { settingsRouter } from "./settings";
@@ -42,6 +43,7 @@ export const appRouter = router({
 	issues: issuesRouter,
 	memory: memoryRouter,
 	notifications: notificationsRouter,
+	prReview: prReviewRouter,
 	pullRequests: pullRequestsRouter,
 	project: projectRouter,
 	ports: portsRouter,
