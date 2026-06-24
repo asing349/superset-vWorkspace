@@ -1,4 +1,5 @@
 import type { Octokit } from "@octokit/rest";
+import { parseGitHubRemote } from "@superset/shared/github-remote";
 import { eq } from "drizzle-orm";
 import type { HostDb } from "../../../db";
 import { projects } from "../../../db/schema";
@@ -87,21 +88,32 @@ function loadProject(db: HostDb, projectId: string): ProjectRow | undefined {
 }
 
 /**
- * Resolve the repo's GitHub `(owner, name)` identity from the project row.
- * Returns null when the project has no recorded GitHub remote — the caller
- * then attempts the local fallback.
+ * Resolve the repo's GitHub `(owner, name)` identity from the LIVE local git
+ * remote — NOT from the cached `projects.repoOwner`/`repoName` snapshot, which
+ * drifts on rename / fork / remote re-point and silently misroutes queries
+ * (enforced by `test/integration/no-snapshot-fields-for-queries.test.ts`).
+ * Mirrors the PR runtime's `getProjectRepository` remote read. Returns null
+ * when the repo has no parseable GitHub remote — the caller then attempts the
+ * local fallback.
  */
-function resolveRepoIdentity(
-	project: ProjectRow,
-): { owner: string; name: string } | null {
-	if (
-		project.repoProvider === "github" &&
-		project.repoOwner &&
-		project.repoName
-	) {
-		return { owner: project.repoOwner, name: project.repoName };
+async function resolveRepoIdentity({
+	git,
+	repoPath,
+	remoteName,
+}: {
+	git: GitFactory;
+	repoPath: string;
+	remoteName: string;
+}): Promise<{ owner: string; name: string } | null> {
+	try {
+		const repo = await git(repoPath);
+		const value = await repo.remote(["get-url", remoteName]);
+		if (typeof value !== "string") return null;
+		const parsed = parseGitHubRemote(value.trim());
+		return parsed ? { owner: parsed.owner, name: parsed.name } : null;
+	} catch {
+		return null;
 	}
-	return null;
 }
 
 /**
@@ -266,11 +278,16 @@ export async function fetchPrDiff(
 	};
 
 	const project = loadProject(db, projectId);
-	if (!project) return empty;
+	if (!project?.repoPath) return empty;
 
-	const identity = resolveRepoIdentity(project);
+	const remoteName = project.remoteName ?? "origin";
+	const identity = await resolveRepoIdentity({
+		git,
+		repoPath: project.repoPath,
+		remoteName,
+	});
 
-	// (a) GitHub path — primary. Requires a recorded GitHub remote identity.
+	// (a) GitHub path — primary. Requires a resolvable GitHub remote identity.
 	if (identity) {
 		try {
 			const octokit = await github();
@@ -289,20 +306,18 @@ export async function fetchPrDiff(
 	}
 
 	// (b) Local fallback — `git fetch` the PR head + `git diff base...head`.
-	if (project.repoPath) {
-		try {
-			return await fetchFromLocalRepo({
-				git,
-				repoPath: project.repoPath,
-				remoteName: project.remoteName ?? "origin",
-				prNumber,
-			});
-		} catch (error) {
-			console.warn(
-				"[host-service:pr-review] Local PR diff fallback failed; returning empty diff",
-				{ projectId, prNumber, error },
-			);
-		}
+	try {
+		return await fetchFromLocalRepo({
+			git,
+			repoPath: project.repoPath,
+			remoteName,
+			prNumber,
+		});
+	} catch (error) {
+		console.warn(
+			"[host-service:pr-review] Local PR diff fallback failed; returning empty diff",
+			{ projectId, prNumber, error },
+		);
 	}
 
 	return empty;

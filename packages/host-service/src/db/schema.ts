@@ -461,3 +461,76 @@ export const ticketRuns = sqliteTable(
 		index("ticket_runs_status_idx").on(table.status),
 	],
 );
+
+/**
+ * PR-review Guide cache (Wave 5, M6). One row per generated guide, keyed
+ * `(projectId, prNumber, headSha)`. `guideJson` is `JSON.stringify(PrReviewGuide)`
+ * (the M3/M4 artifact). `stale` is flipped to `true` by
+ * `markGuideStaleOnHeadChange` when the PR's head SHA advances past the SHA a
+ * guide was built against — surfacing a "Regenerate" affordance WITHOUT ever
+ * regenerating on its own (the wave-5 never-auto-generate guardrail). Local-only
+ * (host SQLite); the cloud schema stays frozen.
+ */
+export const prReviewGuides = sqliteTable(
+	"pr_review_guides",
+	{
+		id: text().primaryKey(),
+		projectId: text("project_id")
+			.notNull()
+			.references(() => projects.id, { onDelete: "cascade" }),
+		prNumber: integer("pr_number").notNull(),
+		headSha: text("head_sha").notNull(),
+		// Serialized `PrReviewGuide` (JSON.stringify). Parsed back on read.
+		guideJson: text("guide_json").notNull(),
+		stale: integer("stale", { mode: "boolean" }).notNull().default(false),
+		createdAt: integer("created_at")
+			.notNull()
+			.$defaultFn(() => Date.now()),
+		updatedAt: integer("updated_at")
+			.notNull()
+			.$defaultFn(() => Date.now()),
+	},
+	(table) => [
+		index("pr_review_guides_project_pr_idx").on(
+			table.projectId,
+			table.prNumber,
+		),
+		uniqueIndex("pr_review_guides_project_pr_head_unique").on(
+			table.projectId,
+			table.prNumber,
+			table.headSha,
+		),
+	],
+);
+
+/**
+ * PR-review diff cache (Wave 5, M6). Optional companion to {@link prReviewGuides}
+ * caching M1's fetched diff so a re-open / guide-regenerate need not re-fetch
+ * GitHub. One row per `(projectId, prNumber, headSha)`; `diffJson` is
+ * `JSON.stringify(PrDiffResult)`. No `stale` flag — a diff is immutable for a
+ * given head SHA (a new commit is a new key), so the row is simply superseded.
+ */
+export const prReviewDiffs = sqliteTable(
+	"pr_review_diffs",
+	{
+		id: text().primaryKey(),
+		projectId: text("project_id")
+			.notNull()
+			.references(() => projects.id, { onDelete: "cascade" }),
+		prNumber: integer("pr_number").notNull(),
+		headSha: text("head_sha").notNull(),
+		// Serialized `PrDiffResult` (JSON.stringify). Parsed back on read.
+		diffJson: text("diff_json").notNull(),
+		createdAt: integer("created_at")
+			.notNull()
+			.$defaultFn(() => Date.now()),
+	},
+	(table) => [
+		index("pr_review_diffs_project_pr_idx").on(table.projectId, table.prNumber),
+		uniqueIndex("pr_review_diffs_project_pr_head_unique").on(
+			table.projectId,
+			table.prNumber,
+			table.headSha,
+		),
+	],
+);

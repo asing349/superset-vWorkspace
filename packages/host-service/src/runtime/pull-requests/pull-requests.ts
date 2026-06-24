@@ -231,6 +231,20 @@ export type PullRequestLinkedListener = (event: {
 	url: string;
 }) => void;
 
+/**
+ * Notified when a tracked PR's head SHA ADVANCES (an existing row updates to a
+ * new `headSha`). Wave-5 M6 uses this to mark any cached PR-review guide built
+ * against the old SHA as STALE — surfacing a "Regenerate" button. It MUST NOT
+ * trigger any regeneration (the never-auto-generate guardrail): the listener
+ * only flips the stale flag. Optional + best-effort: any throw is swallowed so
+ * PR sync never fails because of guide-cache work.
+ */
+export type PullRequestHeadChangedListener = (event: {
+	projectId: string;
+	prNumber: number;
+	newHeadSha: string;
+}) => void;
+
 export interface PullRequestRuntimeManagerOptions {
 	db: HostDb;
 	execGh: ExecGh;
@@ -241,6 +255,8 @@ export interface PullRequestRuntimeManagerOptions {
 	onPullRequestTerminal?: PullRequestTerminalListener;
 	/** B6 on-first-detect hook — ticket→PR loop closure (optional). */
 	onPullRequestLinked?: PullRequestLinkedListener;
+	/** M6 head-SHA-advanced hook — mark a cached guide stale (optional). */
+	onPullRequestHeadChanged?: PullRequestHeadChangedListener;
 }
 
 interface NormalizedRepoIdentity {
@@ -298,6 +314,7 @@ export class PullRequestRuntimeManager {
 	private readonly gitWatcher: GitWatcher;
 	private readonly onPullRequestTerminal?: PullRequestTerminalListener;
 	private readonly onPullRequestLinked?: PullRequestLinkedListener;
+	private readonly onPullRequestHeadChanged?: PullRequestHeadChangedListener;
 	private safetyNetTimer: ReturnType<typeof setInterval> | null = null;
 	private projectRefreshTimer: ReturnType<typeof setInterval> | null = null;
 	private unsubscribeFromGitWatcher: (() => void) | null = null;
@@ -319,6 +336,7 @@ export class PullRequestRuntimeManager {
 		this.gitWatcher = options.gitWatcher;
 		this.onPullRequestTerminal = options.onPullRequestTerminal;
 		this.onPullRequestLinked = options.onPullRequestLinked;
+		this.onPullRequestHeadChanged = options.onPullRequestHeadChanged;
 	}
 
 	/**
@@ -382,6 +400,43 @@ export class PullRequestRuntimeManager {
 			console.warn(
 				"[host-service:pull-request-runtime] onPullRequestTerminal hook threw",
 				{ projectId, prNumber, nextState, error },
+			);
+		}
+	}
+
+	/**
+	 * Fire the M6 head-SHA-advanced hook when an EXISTING PR row's head SHA
+	 * changes (a new commit was pushed). M6 uses it to mark a cached PR-review
+	 * guide built against the prior SHA as STALE. It NEVER regenerates anything
+	 * — only flips the flag (the never-auto-generate guardrail). Skips when the
+	 * SHA is unchanged or there is no prior row (first insert). Best-effort: any
+	 * throw is swallowed so PR sync never fails because of guide-cache work.
+	 */
+	private notifyHeadShaChanged({
+		projectId,
+		prNumber,
+		previousHeadSha,
+		nextHeadSha,
+	}: {
+		projectId: string;
+		prNumber: number;
+		previousHeadSha: string | null;
+		nextHeadSha: string;
+	}): void {
+		if (!this.onPullRequestHeadChanged) return;
+		// Only on a real advance: a first insert (no prior SHA) or an unchanged
+		// SHA must not mark anything stale.
+		if (!previousHeadSha || previousHeadSha === nextHeadSha) return;
+		try {
+			this.onPullRequestHeadChanged({
+				projectId,
+				prNumber,
+				newHeadSha: nextHeadSha,
+			});
+		} catch (error) {
+			console.warn(
+				"[host-service:pull-request-runtime] onPullRequestHeadChanged hook threw",
+				{ projectId, prNumber, error },
 			);
 		}
 	}
@@ -965,6 +1020,18 @@ export class PullRequestRuntimeManager {
 			prNumber,
 			previousState: existing ? coercePullRequestState(existing.state) : null,
 			nextState: state,
+		});
+
+		// M6: head-SHA staleness. On the UPDATE branch, when the head SHA advanced
+		// (a new commit pushed), mark any cached PR-review guide built against the
+		// old SHA stale. `existing.headSha` is the PRIOR value (the update ran on
+		// the same row id, but `existing` is the pre-update snapshot). This NEVER
+		// regenerates a guide — only flips the stale flag.
+		this.notifyHeadShaChanged({
+			projectId,
+			prNumber,
+			previousHeadSha: existing ? existing.headSha : null,
+			nextHeadSha: headSha,
 		});
 
 		return rowId;

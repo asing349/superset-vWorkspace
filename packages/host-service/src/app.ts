@@ -28,6 +28,10 @@ import {
 	regenerateMemorySkillsForAllProjects,
 	registerMemoryMcpRoute,
 } from "./runtime/memory";
+// M6: PR-review guide-cache staleness. Imported by PATH (not via
+// `./runtime/pr-review/index.ts`, which the guide generator owns) — app.ts is
+// the single place that knows about both the PR runtime and the guide cache.
+import { markGuideStaleOnHeadChange } from "./runtime/pr-review/guide-cache";
 import { PullRequestRuntimeManager } from "./runtime/pull-requests";
 import {
 	createApiTaskWriteback,
@@ -154,6 +158,14 @@ export function createApp(options: CreateAppOptions): CreateAppResult {
 				headBranch,
 				prUrl: url,
 			});
+		},
+		// Wave-5 M6: when a tracked PR's head SHA advances (a new commit), mark
+		// any cached PR-review guide built against the old SHA STALE so the UI can
+		// offer a "Regenerate" button. This NEVER regenerates a guide on its own
+		// (the never-auto-generate guardrail) — it only flips the flag. Best-effort
+		// (the hook itself swallows + warns on any throw).
+		onPullRequestHeadChanged: ({ projectId, prNumber, newHeadSha }) => {
+			markGuideStaleOnHeadChange({ db, projectId, prNumber, newHeadSha });
 		},
 	});
 	pullRequestRuntime.start();

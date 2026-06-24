@@ -45,23 +45,25 @@ const throwingGithub = (): Promise<Octokit> => {
 
 describe("fetchPrDiff — GitHub path (mocked Octokit)", () => {
 	let db: HostDb;
+	let repoPath: string;
 	const projectId = "proj-gh";
 
-	beforeEach(() => {
+	beforeEach(async () => {
 		db = buildDb();
+		// The identity (owner/name) is read from the LIVE git remote, not cached
+		// columns — so the project needs a real repo with a GitHub `origin`.
+		repoPath = mkdtempSync(join(tmpdir(), "pr-review-gh-"));
+		const git = simpleGit(repoPath);
+		await git.init(["--initial-branch=main"]);
+		await git.addRemote("origin", "https://github.com/acme/widget.git");
 		db.insert(projects)
-			.values({
-				id: projectId,
-				repoPath: "/tmp/does-not-matter",
-				repoProvider: "github",
-				repoOwner: "acme",
-				repoName: "widget",
-			})
+			.values({ id: projectId, repoPath, remoteName: "origin" })
 			.run();
 	});
 
 	afterEach(() => {
 		(db as unknown as { $client?: { close: () => void } }).$client?.close();
+		rmSync(repoPath, { recursive: true, force: true });
 	});
 
 	it("maps listFiles patches onto the PrDiffFile[] shape + carries body/base/head", async () => {
