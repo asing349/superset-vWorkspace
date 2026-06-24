@@ -128,6 +128,19 @@ export interface PrReviewPaneData {
 	prNumber: number;
 	/** Active tab: the code diff, or the review guide. */
 	section: "diff" | "guide";
+	/**
+	 * Anchor target for the Diff tab (M5). Set when a Guide claim is clicked:
+	 * the pane switches to `section:"diff"` and the Diff CodeView scrolls to
+	 * `focusFile` (at `focusLine` when known). Mirrors the wave-3 A3
+	 * `DiffPaneData.focusLine`/`focusTick` pattern — `focusTick` bumps on every
+	 * click so repeat clicks of the same anchor re-scroll. Unset means "no
+	 * pending scroll" (the diff opens at the top).
+	 */
+	focusFile?: string;
+	/** 1-based line within `focusFile` to center on; absent ⇒ scroll to the file. */
+	focusLine?: number;
+	/** Bumped on each anchor click so the scroll effect re-fires on repeats. */
+	focusTick?: number;
 }
 
 export type PaneViewerData =

@@ -1,5 +1,6 @@
 import { toast } from "@superset/ui/sonner";
-import { useCallback, useState } from "react";
+import { workspaceTrpc } from "@superset/workspace-client";
+import { useCallback } from "react";
 import type { PrReviewGuide } from "../../types";
 
 export interface UseGenerateGuideArgs {
@@ -8,53 +9,77 @@ export interface UseGenerateGuideArgs {
 }
 
 export interface UseGenerateGuideResult {
-	/** The generated guide, or null until the user clicks Generate (M2: always null). */
+	/** The cached or freshly-generated guide, or null when none exists yet. */
 	guide: PrReviewGuide | null;
-	/** True while a generation is in flight. */
+	/** True while a generation is in flight (the button's pending state). */
 	isGenerating: boolean;
+	/** True while the cache is still being read (gates empty-vs-loading copy). */
+	isLoadingCached: boolean;
 	/**
-	 * Whether the cached guide is stale vs the PR's current head SHA (M6). M2
-	 * has no cache, so always false — the "Regenerate" button never shows yet.
+	 * Whether the cached guide is stale vs the PR's current head SHA (M6) — i.e.
+	 * new commits landed since this guide was generated. Drives the
+	 * "stale — Regenerate" affordance. Never triggers anything on its own.
 	 */
 	isStale: boolean;
-	/** Trigger generation. The ONLY way a guide is ever produced (A2). */
+	/** Trigger generation. The ONLY way a guide is ever produced (plan A2). */
 	generate: () => void;
 }
 
 /**
- * Owns the Guide tab's generate flow (Wave 5, M2 seam).
+ * Owns the Guide tab's data + generate flow (Wave 5, M5).
  *
- * The guide is produced ONLY by an explicit button press — never on open, view,
- * or new commits (plan A2). The host `prReview.generateGuide({ projectId,
- * prNumber })` is OWNED BY the "guide" teammate (M4) and has NOT landed on the
- * host router yet, so M2 does not call it: `generate` surfaces a clear
- * "coming soon" toast and `guide` stays null. When M4 lands `generateGuide`,
- * this hook is the single swap point — wire `generate` to
- * `workspaceTrpc.prReview.generateGuide.useMutation()` and set `guide` from its
- * output (the `PrReviewGuide` shape the Guide tab already renders), plus read
- * the cache + head-SHA staleness for `isStale` (M6). No Guide-tab UI change is
- * needed.
+ * Read path (cache-first, AGENTS.md #9): `prReview.getCachedGuide` is a QUERY
+ * that GENERATES NOTHING — it only returns what a prior button press persisted
+ * (`{ guide, stale } | null`). On open/view we render the cached guide (or the
+ * empty state when null) immediately from `data`; `isLoadingCached` only chooses
+ * the empty-vs-loading copy.
+ *
+ * Write path (button-only): `prReview.generateGuide` is a MUTATION — the host
+ * made it a mutation precisely so queries (open/view/tab-switch) can't reach it.
+ * `generate` is the sole caller and is invoked ONLY from the button's onClick
+ * (never from an effect / onMount), so generation stays explicit. On success we
+ * invalidate `getCachedGuide` so the freshly-persisted guide (and its now-fresh
+ * `stale:false`) flows back through the read path — one source of truth.
  */
-export function useGenerateGuide(
-	_args: UseGenerateGuideArgs,
-): UseGenerateGuideResult {
-	const [isGenerating] = useState(false);
-	const [guide] = useState<PrReviewGuide | null>(null);
+export function useGenerateGuide({
+	projectId,
+	prNumber,
+}: UseGenerateGuideArgs): UseGenerateGuideResult {
+	const utils = workspaceTrpc.useUtils();
+
+	const cachedQuery = workspaceTrpc.prReview.getCachedGuide.useQuery(
+		{ projectId, prNumber },
+		// The cache is read-only and changes only on an explicit (re)generate, so
+		// it never needs background refetching.
+		{ staleTime: Number.POSITIVE_INFINITY },
+	);
+
+	const generateMutation = workspaceTrpc.prReview.generateGuide.useMutation({
+		onSuccess: () => {
+			// Re-read the cache so the persisted guide + fresh staleness render via
+			// the single read path (rather than mirroring the mutation result into
+			// local state).
+			void utils.prReview.getCachedGuide.invalidate({ projectId, prNumber });
+		},
+		onError: (error) => {
+			toast.error("Couldn't generate the review guide", {
+				description: error.message,
+			});
+		},
+	});
 
 	const generate = useCallback(() => {
-		// M4 replaces this body with the real local-AI-session generation. Until
-		// then, be explicit that nothing ran (honors "never generate on its own"
-		// AND "no surprise AI runs").
-		toast.info("Guide generation is coming soon", {
-			description:
-				"The memory-grounded review guide lands with the guide generator.",
-		});
-	}, []);
+		// Sole trigger. Called only from the Generate / Regenerate button onClick.
+		generateMutation.mutate({ projectId, prNumber });
+	}, [generateMutation, projectId, prNumber]);
+
+	const cached = cachedQuery.data ?? null;
 
 	return {
-		guide,
-		isGenerating,
-		isStale: false,
+		guide: cached?.guide ?? null,
+		isGenerating: generateMutation.isPending,
+		isLoadingCached: cachedQuery.isLoading,
+		isStale: cached?.stale ?? false,
 		generate,
 	};
 }

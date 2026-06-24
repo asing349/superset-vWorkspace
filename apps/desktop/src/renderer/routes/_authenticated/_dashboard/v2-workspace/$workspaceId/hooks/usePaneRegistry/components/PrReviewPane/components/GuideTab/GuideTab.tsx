@@ -1,32 +1,41 @@
 import { Button } from "@superset/ui/button";
 import { LuRefreshCw, LuSparkles } from "react-icons/lu";
 import type { UseGenerateGuideResult } from "../../hooks/useGenerateGuide";
+import type { GuideAnchor } from "../../types";
 import { GuideSectionView } from "../GuideSectionView";
 
 interface GuideTabProps {
 	guideState: UseGenerateGuideResult;
-	/** Open the editor / scroll the Diff tab from a guide anchor (M5 wires this). */
-	onOpenAnchor?: (anchor: {
-		file: string;
-		line?: number;
-		symbol?: string;
-	}) => void;
+	/** Jump a guide anchor to the sibling Diff tab / editor (M5). */
+	onOpenAnchor?: (anchor: GuideAnchor) => void;
 }
 
 /**
- * The Guide tab of the PR-review window (Wave 5, M2).
+ * The Guide tab of the PR-review window (Wave 5, M2/M5).
  *
- * When no guide exists (the M2 state, and any PR before its first generation),
- * this is an EMPTY STATE with a single "Generate guide" button — the ONLY thing
- * that ever triggers generation (plan A2: never on open, view, or new commits).
- * Once a guide exists (M4+), it renders the sections; a "Regenerate" button is
- * shown ONLY when the cached guide is stale vs the PR's head SHA (M6) — it is
- * never auto-run.
+ * Cache-first: the guide is read via `prReview.getCachedGuide` (read-only — it
+ * generates nothing). When the cache is null this is an EMPTY STATE with a
+ * single "Generate guide" button — the ONLY thing that ever triggers generation
+ * (plan A2: never on open, view, or new commits). When a guide exists it renders
+ * the sections; a "Regenerate" button shows ONLY when the cached guide is stale
+ * vs the PR's head SHA (M6) and is never auto-run. Clicking a code-anchored
+ * claim calls `onOpenAnchor` (M5 → scroll the Diff tab / open the editor).
  */
 export function GuideTab({ guideState, onOpenAnchor }: GuideTabProps) {
-	const { guide, isGenerating, isStale, generate } = guideState;
+	const { guide, isGenerating, isLoadingCached, isStale, generate } =
+		guideState;
 
 	if (!guide) {
+		// Cache-first (#9): while the read is still in flight, show a neutral
+		// loading line rather than flashing the "no guide" CTA (which could be
+		// misread as "nothing was generated").
+		if (isLoadingCached) {
+			return (
+				<div className="flex h-full w-full cursor-text select-text items-center justify-center text-sm text-muted-foreground">
+					Loading guide…
+				</div>
+			);
+		}
 		return (
 			<div className="flex h-full w-full flex-col items-center justify-center gap-4 px-6 text-center">
 				<LuSparkles className="size-8 text-muted-foreground" />

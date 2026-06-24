@@ -1,81 +1,42 @@
+import type { AppRouter } from "@superset/host-service";
+import type { inferRouterOutputs } from "@trpc/server";
+
 /**
- * Guide artifact contract — the RENDERER's view of the Guide tab's data
- * (Wave 5, M2/M5). This MIRRORS the host's `prReview` guide contract
- * (`packages/host-service/src/runtime/pr-review/guide-types.ts`) exactly:
- * `PrReviewGuide → GuideSection[] → GuideItem[]`, each code-anchored claim
- * carrying a `GuideAnchor`.
+ * Guide artifact types for the Guide tab (Wave 5, M5) — DERIVED from the host
+ * router output, the single source of truth.
  *
- * Why a renderer-local copy rather than `inferRouterOutputs<AppRouter>`:
- * `prReview.generateGuide` is owned by the "guide" teammate (M4) and has NOT
- * landed on the host router yet, so `inferRouterOutputs<AppRouter>["prReview"]
- * ["generateGuide"]` does not resolve today. The renderer can NOT import the
- * host's `guide-types.ts` directly either — it imports `@superset/memory`
- * (`AreaTag`) and `node:`-adjacent host modules, which the browser must not
- * pull in. So M2 defines the SAME pure-data shape here (no Node deps, no host
- * import) and renders against it. When M4 lands `generateGuide`, this shape is
- * structurally identical to its output, so swapping `useGenerateGuide` to the
- * real mutation is a drop-in (M4/M5) with no rendering changes.
+ * In M2 these were mirrored renderer-locally because `prReview.generateGuide` /
+ * `getCachedGuide` had not landed yet. They are now live, so M5 reconciles to a
+ * single source of truth: `getCachedGuide` returns
+ * `{ guide: PrReviewGuide; stale: boolean } | null`, so `PrReviewGuide` is
+ * exactly the non-null `guide` of that output (identical to the `generateGuide`
+ * mutation's output). This is a TYPE-ONLY import (erased at build) — NO runtime
+ * host dependency, so the renderer stays browser-safe (the host's
+ * `guide-types.ts` itself imports `@superset/memory`, which the browser must
+ * not pull in at runtime; `inferRouterOutputs` only reads the structural type)
+ * and the guide shape can never drift from what the procedure returns.
  *
- * The shapes below are kept byte-for-byte field-compatible with the host
- * contract. Do not diverge without telling the orchestrator.
+ * The host's `PrReviewGuide` carries extra fields the renderer doesn't paint
+ * (e.g. `areaTags`, `headSha`); deriving the whole type keeps them available and
+ * authoritative rather than re-declaring a subset.
  */
 
-/** Stable identifiers for the guide's sections (M5 keys anchor wiring off these). */
-export type GuideSectionId =
-	| "at-a-glance"
-	| "what-changed"
-	| "read-first"
-	| "risk-flags"
-	| "project-conventions"
-	| "prior-playbooks"
-	| "where-x-lives"
-	| "checks-and-threads";
+type PrReviewOutputs = inferRouterOutputs<AppRouter>["prReview"];
 
-/** Severity of a risk-flag item, for the renderer to colour/prioritize. */
-export type GuideRiskSeverity = "info" | "warning" | "danger";
+/** `{ guide, stale } | null` — exactly what `getCachedGuide` returns. */
+export type CachedGuideResult = PrReviewOutputs["getCachedGuide"];
 
 /**
- * A code anchor attached to a guide claim. Clicking the rendered item (M5) jumps
- * the sibling Diff tab to `file` (and `line`/`symbol` when present) and/or opens
- * the editor at `file:line`. Every guide claim that points at code carries one.
+ * The computed Guide artifact the Guide tab renders — the non-null `guide` of
+ * the cached result (identical to the `generateGuide` mutation's output).
  */
-export interface GuideAnchor {
-	/** Repo-relative POSIX path of the target file. */
-	file: string;
-	/** 1-based line in the file's NEW side, when a precise line is known. */
-	line?: number;
-	/** Exported symbol name ("where X lives"), when resolved from the index. */
-	symbol?: string;
-}
+export type PrReviewGuide = PrReviewOutputs["generateGuide"];
 
-/**
- * One claim within a guide section. `text` is the human-readable line; `anchor`
- * is present whenever the claim points at a specific file/line/symbol. Optional
- * `severity` is set on risk-flag items; optional `href` carries an external
- * target (a PR / playbook URL) the renderer may open instead of a code anchor.
- */
-export interface GuideItem {
-	text: string;
-	anchor?: GuideAnchor;
-	severity?: GuideRiskSeverity;
-	href?: string;
-}
+/** One section of the guide ({ id, title, items }). */
+export type GuideSection = PrReviewGuide["sections"][number];
 
-/** One section of the guide: a stable id, a human title, and its claims. */
-export interface GuideSection {
-	id: GuideSectionId;
-	title: string;
-	items: GuideItem[];
-}
+/** One claim within a guide section ({ text, anchor?, severity?, href? }). */
+export type GuideItem = GuideSection["items"][number];
 
-/**
- * The computed Guide artifact the Guide tab renders. `grounded` is false when
- * the guide degraded to the deterministic diff-only baseline (no indexed
- * project / empty memory), so the renderer can badge "deterministic only".
- */
-export interface PrReviewGuide {
-	sections: GuideSection[];
-	prNumber: number;
-	headSha: string;
-	grounded: boolean;
-}
+/** A code anchor attached to a guide claim ({ file, line?, symbol? }). */
+export type GuideAnchor = NonNullable<GuideItem["anchor"]>;
