@@ -50,9 +50,9 @@ None blocking — decisions are in the Decision Log per the user's direction. De
 
 ## Progress
 
-- [ ] M1 — Arbitrary-PR diff source (host): fetch a PR's `base..head` diff (Octokit `pulls/{n}/files`, fallback local `git fetch` + `git diff`), parse into diff-renderer items; carry PR `body`/`baseBranch`; cache by `(projectId, prNumber, headSha)`.
+- [x] M1 (2026-06-24) — DONE. Host `prReview` router + reusable `fetchPrDiff`: GitHub `pulls.get` + paginated `pulls.listFiles` (raw unified patches) with a local `git fetch refs/pull/<n>/head` + `git diff base...head` fallback for PRs not checked out. Returns the fixed `{ files: PrDiffFile[], body, baseBranch, headSha, prNumber }` (RAW patches; renderer parses via parseDiffFromFile). Graceful-empty on unresolvable. 4 tests; typecheck + biome clean. (Cache = M6.) Commit `afa4a514c`.
 - [ ] M2 — PR-browse list (all repo PRs) + the `kind:"pr-review"` pane shell (Diff | Guide segmented control); Diff tab renders via the existing `DiffPane` fed by M1.
-- [ ] M3 — Deterministic + memory-grounded guide skeleton (host): gather diff → `pathsToAreas` → `memory.retrieve` → render markdown-with-anchors. No model.
+- [x] M3 (2026-06-24) — DONE. `buildGuideSkeleton` (model-free) builds a code-anchored `PrReviewGuide` from the diff (as input) + wave-3 memory via narrow injected ports; sections at-a-glance/what-changed/read-first/risk-flags/conventions/playbooks/where-x-lives/checks; grounds when the project is indexed, degrades to diff-only (`grounded:false`) otherwise. Exports the guide artifact contract (window derives via inferRouterOutputs). 7 tests; typecheck + biome clean. Commit `f9ff9474f`.
 - [ ] M4 — "Generate guide" button → optional local-AI-session enrichment; button-only, never automatic; persist the result.
 - [ ] M5 — Anchor wiring: guide claims → scroll the sibling Diff tab to the file/hunk and/or open the editor at `file:line` (reuse wave-3 A3 `focusLine`).
 - [ ] M6 — Storage/cache + manual staleness: local `pr_review_guides` (+ diff cache) table; head-SHA change → mark stale + "Regenerate" button (no auto-run).
@@ -67,6 +67,10 @@ Timestamp each item when checked off; split partials into done/remaining.
   Evidence: `DiffPane` + `@pierre/diffs` render multi-file diffs; the wave-3 Memory pane (`kind:"memory"`, `section` segmented control) is the precedent for a `kind:"pr-review"` pane; Octokit `pulls/{n}/files` returns unified-diff patches that `parseDiffFromFile` consumes directly.
 
 (Add observations as work proceeds.)
+
+- Gating reality carried from wave 4 (re-confirmed): biome is PINNED `@2.4.2`; there is NO `bun run lint:check-node-imports` script (node-import safety via desktop tsc + biome `noRestrictedImports`); whole-tree `bun test`/`turbo test` CRASHES Bun (pty-daemon real-spawn) so PER-PACKAGE `bun test` is the gate; the `rg`-based lint sub-check is env-blocked locally (no ripgrep binary) but runs in CI.
+- Clean area-split for the host `pr-review` work (no file collision): guide owns `packages/host-service/src/runtime/pr-review/` (the guide builder + the shared artifact types); diff owns `packages/host-service/src/trpc/router/pr-review/` (the `prReview` router + `fetchPrDiff`). M6's storage stays in `runtime/`+`db/`; M4's guide procedures go in the `trpc/router/pr-review/` router.
+- Contract note for M4: M1's `PrDiffFile.status` is `string` (raw GitHub/git status vocabulary); M3's `PrDiffInput.status` is the git `FileStatus` union. M4 must reconcile (normalize the raw status when feeding M1's result into `buildGuideSkeleton`) — GitHub uses `removed` where git uses `deleted`, etc.
 
 
 ## Decision Log
