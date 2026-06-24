@@ -7,12 +7,17 @@ import { Brain } from "lucide-react";
 import { BsTerminalPlus } from "react-icons/bs";
 import { TbMessageCirclePlus, TbWorld } from "react-icons/tb";
 import { HotkeyMenuShortcut } from "renderer/components/HotkeyMenuShortcut";
+import { PullRequestsSubmenu } from "./components/PullRequestsSubmenu";
 
 interface AddTabMenuProps {
 	onAddTerminal: () => void;
 	onAddChat: () => void;
 	onAddBrowser: () => void;
 	onOpenMemory: () => void;
+	/** v2 project whose repo PRs the "Pull Requests" submenu lists. */
+	projectId: string;
+	/** Open the selected PR in a review window. */
+	onOpenPullRequest: (prNumber: number) => void;
 	showPresetsBar: boolean;
 	onToggleShowPresetsBar: (enabled: boolean) => void;
 }
@@ -22,6 +27,8 @@ export function AddTabMenu({
 	onAddChat,
 	onAddBrowser,
 	onOpenMemory,
+	projectId,
+	onOpenPullRequest,
 	showPresetsBar,
 	onToggleShowPresetsBar,
 }: AddTabMenuProps) {
@@ -46,6 +53,10 @@ export function AddTabMenu({
 				<Brain className="size-4" />
 				<span>Memory</span>
 			</DropdownMenuItem>
+			<PullRequestsSubmenu
+				projectId={projectId}
+				onOpenPullRequest={onOpenPullRequest}
+			/>
 			<DropdownMenuSeparator />
 			<DropdownMenuCheckboxItem
 				checked={showPresetsBar}

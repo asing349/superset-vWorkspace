@@ -10,10 +10,12 @@ import type {
 	DiffPaneData,
 	MemoryPaneData,
 	PaneViewerData,
+	PrReviewPaneData,
 	TerminalPaneData,
 } from "../../types";
 import type { TerminalLauncher } from "../useV2TerminalLauncher";
 import { findMemoryPane } from "./utils/findMemoryPane";
+import { findPrReviewPane } from "./utils/findPrReviewPane";
 
 export function useWorkspacePaneOpeners({
 	store,
@@ -40,6 +42,7 @@ export function useWorkspacePaneOpeners({
 	addBrowserTab: () => void;
 	openCommentPane: (comment: CommentPaneData) => void;
 	openMemoryPane: () => void;
+	openPrReviewPane: (prNumber: number) => void;
 } {
 	const openDiffPane = useCallback(
 		(
@@ -205,6 +208,30 @@ export function useWorkspacePaneOpeners({
 		});
 	}, [store]);
 
+	const openPrReviewPane = useCallback(
+		(prNumber: number) => {
+			const state = store.getState();
+			// Single review window PER PR (keyed by prNumber): focus the existing
+			// window if this PR is already open, otherwise add a fresh tab opened on
+			// the Diff tab. Opening a different PR opens its own window.
+			const existing = findPrReviewPane(state.tabs, prNumber);
+			if (existing) {
+				state.setActiveTab(existing.tabId);
+				state.setActivePane(existing);
+				return;
+			}
+			state.addTab({
+				panes: [
+					{
+						kind: "pr-review",
+						data: { prNumber, section: "diff" } as PrReviewPaneData,
+					},
+				],
+			});
+		},
+		[store],
+	);
+
 	return {
 		openDiffPane,
 		addTerminalTab,
@@ -212,5 +239,6 @@ export function useWorkspacePaneOpeners({
 		addBrowserTab,
 		openCommentPane,
 		openMemoryPane,
+		openPrReviewPane,
 	};
 }

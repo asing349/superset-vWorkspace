@@ -185,6 +185,7 @@ function V2WorkspaceContent() {
 		addBrowserTab,
 		openCommentPane,
 		openMemoryPane,
+		openPrReviewPane,
 	} = useWorkspacePaneOpeners({
 		store,
 		launcher,
@@ -320,6 +321,8 @@ function V2WorkspaceContent() {
 									onAddChat={addChatTab}
 									onAddBrowser={addBrowserTab}
 									onOpenMemory={openMemoryPane}
+									projectId={workspace.projectId}
+									onOpenPullRequest={openPrReviewPane}
 									showPresetsBar={showPresetsBar}
 									onToggleShowPresetsBar={setShowPresetsBar}
 								/>

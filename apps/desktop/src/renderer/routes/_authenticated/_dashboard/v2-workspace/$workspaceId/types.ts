@@ -115,6 +115,21 @@ export interface MemoryPaneData {
 	selectedPlaybookId?: string | null;
 }
 
+/**
+ * PR review window (Wave 5, M2). One pane per PR surfaces the two-tab review
+ * surface: a **Diff** tab (the PR's `base..head` multi-file diff, fed by the
+ * host `prReview.getDiff`) and a **Guide** tab (the on-demand, memory-grounded
+ * review guide — empty until the user clicks "Generate guide"). `section`
+ * selects the active tab; the `MemoryPaneData.section` segmented control is the
+ * precedent. `prNumber` keys the single-instance-per-PR opener.
+ */
+export interface PrReviewPaneData {
+	/** The PR this window reviews (the single-instance + getDiff key). */
+	prNumber: number;
+	/** Active tab: the code diff, or the review guide. */
+	section: "diff" | "guide";
+}
+
 export type PaneViewerData =
 	| FilePaneData
 	| TerminalPaneData
@@ -123,4 +138,5 @@ export type PaneViewerData =
 	| DevtoolsPaneData
 	| DiffPaneData
 	| CommentPaneData
-	| MemoryPaneData;
+	| MemoryPaneData
+	| PrReviewPaneData;

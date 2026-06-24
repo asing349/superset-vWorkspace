@@ -12,6 +12,7 @@ import {
 	Brain,
 	Circle,
 	GitCompareArrows,
+	GitPullRequest,
 	Globe,
 	MessageSquare,
 } from "lucide-react";
@@ -48,6 +49,7 @@ import type {
 	DevtoolsPaneData,
 	FilePaneData,
 	PaneViewerData,
+	PrReviewPaneData,
 	TerminalPaneData,
 } from "../../types";
 import type { TerminalLauncher } from "../useV2TerminalLauncher";
@@ -62,6 +64,7 @@ import { DiffPaneHeaderExtras } from "./components/DiffPane/components/DiffPaneH
 import { FilePane } from "./components/FilePane";
 import { FilePaneHeaderExtras } from "./components/FilePane/components/FilePaneHeaderExtras";
 import { MemoryPane } from "./components/MemoryPane";
+import { PrReviewPane } from "./components/PrReviewPane";
 import { TerminalPane } from "./components/TerminalPane";
 import { TerminalPaneIcon } from "./components/TerminalPane/components/TerminalPaneIcon";
 import { TerminalSessionDropdown } from "./components/TerminalPane/components/TerminalSessionDropdown";
@@ -589,6 +592,20 @@ export function usePaneRegistry({
 				contextMenuActions: (_ctx, defaults) =>
 					defaults.map((d) =>
 						d.key === "close-pane" ? { ...d, label: "Close Memory" } : d,
+					),
+			},
+			"pr-review": {
+				getIcon: () => <GitPullRequest className="size-3.5" />,
+				getTitle: (pane) => {
+					const data = pane.data as PrReviewPaneData;
+					return `PR #${data.prNumber}`;
+				},
+				renderPane: (ctx: RendererContext<PaneViewerData>) => (
+					<PrReviewPane context={ctx} projectId={workspace.projectId} />
+				),
+				contextMenuActions: (_ctx, defaults) =>
+					defaults.map((d) =>
+						d.key === "close-pane" ? { ...d, label: "Close PR Review" } : d,
 					),
 			},
 		}),
