@@ -712,3 +712,31 @@ export const prReviewObservedBusinessRules = sqliteTable(
 		),
 	],
 );
+
+// Wave-7 M1: host-local Linear connection (one-button PKCE, NO client secret).
+// A single per-machine connection — cloud-precedence guarantees at most one
+// local connection is ever active, so this is a singleton row (`id = 1`).
+// The access + refresh tokens are stored ENCRYPTED at rest (AES-256-GCM with a
+// machine-derived key; see runtime/linear-auth/crypto.ts) in the `*_enc`
+// columns and are NEVER returned to the renderer or logged. `viewer_*` /
+// `workspace_*` are NON-secret display fields powering the status card
+// ("Connected as <viewer> (<workspace>)").
+export const linearLocalAuth = sqliteTable("linear_local_auth", {
+	id: integer().primaryKey().default(1),
+	accessTokenEnc: text("access_token_enc").notNull(),
+	refreshTokenEnc: text("refresh_token_enc"),
+	// Epoch ms at which the access token expires (null = unknown).
+	expiresAt: integer("expires_at"),
+	scope: text(),
+	viewerId: text("viewer_id"),
+	viewerName: text("viewer_name"),
+	viewerEmail: text("viewer_email"),
+	workspaceId: text("workspace_id"),
+	workspaceName: text("workspace_name"),
+	createdAt: integer("created_at")
+		.notNull()
+		.$defaultFn(() => Date.now()),
+	updatedAt: integer("updated_at")
+		.notNull()
+		.$defaultFn(() => Date.now()),
+});

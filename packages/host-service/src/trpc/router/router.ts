@@ -12,6 +12,7 @@ import { githubRouter } from "./github";
 import { healthRouter } from "./health";
 import { hostRouter } from "./host";
 import { issuesRouter } from "./issues";
+import { linearRouter } from "./linear";
 import { memoryRouter } from "./memory";
 import { notificationsRouter } from "./notifications";
 import { portsRouter } from "./ports";
@@ -44,6 +45,7 @@ export const appRouter = router({
 	github: githubRouter,
 	cloud: cloudRouter,
 	issues: issuesRouter,
+	linear: linearRouter,
 	memory: memoryRouter,
 	notifications: notificationsRouter,
 	prReview: prReviewRouter,

@@ -15,6 +15,11 @@ import { ChatRuntimeManager } from "./runtime/chat";
 import { WorkspaceFilesystemManager } from "./runtime/filesystem";
 import type { GitCredentialProvider } from "./runtime/git";
 import { createGitFactory } from "./runtime/git";
+import {
+	isCloudLinearConnected,
+	LinearAuthService,
+	LinearLocalAuthStore,
+} from "./runtime/linear-auth";
 import { runMainWorkspaceSweep } from "./runtime/main-workspace-sweep";
 import {
 	IndexRefreshWatcher,
@@ -231,11 +236,34 @@ export function createApp(options: CreateAppOptions): CreateAppResult {
 	// auth storage; the `host.auth.*` router proxies to it.
 	const chatService = options.chatService ?? new ChatService();
 
+	// Wave-7 M1: host-local Linear connection (one-button PKCE, NO client
+	// secret), gated by cloud-precedence. The public client id is read from
+	// `LINEAR_DESKTOP_CLIENT_ID` (absent → no live connect; documented for
+	// from-source dev). The precedence gate reads the authoritative cloud Linear
+	// status via the cloud API client; an unreachable cloud (e.g. local-only
+	// dev) counts as "not connected" so local connect still works offline. The
+	// loopback redirect port is overridable via `LINEAR_DESKTOP_REDIRECT_PORT`.
+	const linearRedirectPortRaw = process.env.LINEAR_DESKTOP_REDIRECT_PORT;
+	const linearRedirectPort = linearRedirectPortRaw
+		? Number.parseInt(linearRedirectPortRaw, 10)
+		: undefined;
+	const linearAuth = new LinearAuthService({
+		store: new LinearLocalAuthStore({ db }),
+		checkCloudConnected: () =>
+			isCloudLinearConnected({ api, organizationId: config.organizationId }),
+		clientId: process.env.LINEAR_DESKTOP_CLIENT_ID,
+		redirect:
+			linearRedirectPort !== undefined && Number.isFinite(linearRedirectPort)
+				? { port: linearRedirectPort }
+				: undefined,
+	});
+
 	const runtime = {
 		auth: chatService,
 		chat: chatRuntime,
 		filesystem,
 		pullRequests: pullRequestRuntime,
+		linearAuth,
 		memoryIndex,
 		memoryRetrieve,
 		memoryConsolidation,
@@ -351,6 +379,12 @@ export function createApp(options: CreateAppOptions): CreateAppResult {
 			pullRequestRuntime.stop();
 		} catch (err) {
 			console.warn("[host-service] pullRequestRuntime.stop failed:", err);
+		}
+		try {
+			// Tear down any in-flight Linear loopback redirect listener (W7 M1).
+			linearAuth.cancelConnect();
+		} catch (err) {
+			console.warn("[host-service] linearAuth.cancelConnect failed:", err);
 		}
 		try {
 			eventBus.close();

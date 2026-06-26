@@ -14,6 +14,7 @@ import {
 	SETTING_ITEM_ID,
 	type SettingItemId,
 } from "../../../utils/settings-search";
+import { LinearLocalConnection } from "./components/LinearLocalConnection";
 
 interface IntegrationsSettingsProps {
 	visibleItems?: SettingItemId[] | null;
@@ -123,14 +124,17 @@ export function IntegrationsSettings({
 
 			<div className="space-y-1">
 				{showLinear && (
-					<IntegrationRow
-						name="Linear"
-						description="Sync issues bidirectionally with Linear."
-						icon={<SiLinear className="size-5" />}
-						isConnected={isLinearConnected}
-						connectedOrgName={linearConnection?.externalOrgName}
-						onManage={() => handleOpenWeb("/integrations/linear")}
-					/>
+					<>
+						<IntegrationRow
+							name="Linear"
+							description="Sync issues bidirectionally with Linear."
+							icon={<SiLinear className="size-5" />}
+							isConnected={isLinearConnected}
+							connectedOrgName={linearConnection?.externalOrgName}
+							onManage={() => handleOpenWeb("/integrations/linear")}
+						/>
+						<LinearLocalConnection cloudConnected={isLinearConnected} />
+					</>
 				)}
 
 				{showGithub && (

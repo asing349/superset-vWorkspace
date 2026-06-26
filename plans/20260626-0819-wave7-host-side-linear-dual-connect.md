@@ -55,7 +55,7 @@ The differentiator vs. wave-4: Linear becomes usable **with zero cloud setup** (
 
 ## Progress
 
-- [ ] M1 — Host-side PKCE connect + local encrypted token store: `linear.auth.*` host router (start/complete/disconnect/status + refresh) running **PKCE** OAuth (no secret), token stored host-local (encrypted/keychain); one-button "Connect Linear (this Mac)" in Settings → Integrations, **gated on cloud being disconnected** (cloud-precedence); redirect mechanism chosen here (OQ1).
+- [x] M1 — Host-side PKCE connect + local encrypted token store — **done 2026-06-26T08:54Z**: `linear.auth.*` host router (`getConnection`/`startConnect`/`consumeCallback`/`completeConnect`/`cancelConnect`/`disconnect`/`refresh`) running **PKCE** OAuth (no secret), tokens stored host-local **encrypted** (AES-256-GCM, machine-derived key) in the new `linear_local_auth` SQLite table (migration **0015**); one-button "Connect Linear (this Mac)" + local status in Settings → Integrations, **gated on cloud being disconnected** (cloud-precedence, both server-side gate + disabled button w/ explainer); redirect mechanism chosen (OQ1 → **loopback HTTP listener**). Gates green: typecheck 29/29, `bun run lint` exit 0, `bun test packages/host-service` 1018 pass / 0 fail (16 new). **Note for M2:** the next migration is **0016** (M1 took 0015); `linear_tickets` should be generated as 0016, not 0015 as originally written.
 - [ ] M2 — Local ticket fetch + host store + stream: host runtime poller (`@linear/sdk`) → new `linear_tickets` host SQLite table → tRPC query/subscription to the renderer; interval poll + manual Refresh; team picker (reuse `getTeams`).
 - [ ] M3 — Source-agnostic ticket layer: host `tickets.*` that resolves the active source (**cloud if connected, else local**) at read time, tags `source`, routes writeback to the active source; renderer ticket list reads it with a source badge.
 - [ ] M4 — Wave-4 ticket→PR on the active source: orchestrator reads the source-agnostic layer; status/comment writeback dispatched to the active source (cloud `ctx.api.task.update` / local Linear API).
@@ -77,6 +77,17 @@ Timestamp each item when checked off; split partials into done/remaining.
 
 - Observation: GitHub "just worked" locally because of the `gh` CLI's bundled OAuth app; Linear has no CLI equivalent, which is why it needs a registered OAuth app at all.
   Evidence: host GitHub Octokit reads `providers.credentials.getToken("github.com")` (i.e. the `gh auth login` token); there is no analogous Linear CLI, so a `client_id` must be provisioned (public, secret-free for the local PKCE path).
+
+- Observation (M1): the host-side **OpenAI** OAuth loopback is a closer/better precedent than the Anthropic one for the local Linear connect.
+  Evidence: `packages/chat/.../openai-oauth-loopback.ts` already implements exactly the loopback-capture + renderer-poll (`consumeOpenAIOAuthCallback`) + `complete*` shape we needed, including the manual-paste fallback. M1's `LinearAuthService` mirrors it (host returns the authorize URL, renderer opens it via `electronTrpcClient.external.openUrl`, polls `consumeCallback`, calls `completeConnect`).
+
+- Observation (M1): `@linear/sdk` is **not** a `packages/host-service` dependency (it's only in `packages/trpc`/`apps/api`).
+  Evidence: M1 therefore fetches viewer/workspace for the status card via a direct `https://api.linear.app/graphql` POST (fully injectable/mockable, best-effort) rather than the SDK. **M2 must add `@linear/sdk` to `packages/host-service/package.json`** before using `new LinearClient({ accessToken })` for the poller.
+
+- Observation (M1): the precedence gate must treat an **unreachable cloud as "not connected"**, or local connect could never work in local-only dev (the primary use case).
+  Evidence: `isCloudLinearConnected` calls the cloud `integration.linear.getConnection` via `ctx.api`; in local dev that throws/unauthorized, so the helper catches and returns `false`. A cloud connection counts as active only when the query returns a non-null row with `needsReconnect === false`.
+
+- Observation (M1): host SQLite drizzle is **synchronous** (`.get()`/`.all()`/`.run()`), and host-service tests build the db with `bun:sqlite` + `drizzle-orm/bun-sqlite` (prod uses `better-sqlite3`). The new store/tests follow that.
 
 (Add observations as work proceeds.)
 
@@ -103,6 +114,9 @@ Timestamp each item when checked off; split partials into done/remaining.
 
 - Decision: **Redirect capture mechanism deferred to M1 implementation** (OQ1 "later").
   Rationale: User direction; decided when wiring the connect flow after verifying the desktop's existing protocol support. Date/Author: 2026-06-26.
+
+- Decision (OQ1, RESOLVED in M1): **Transient loopback HTTP listener** (`http://127.0.0.1:<port>/callback`) over a registered `superset://` custom scheme.
+  Rationale: The desktop already runs a host-side loopback HTTP listener for the **OpenAI** OAuth PKCE flow (`packages/chat/.../openai-oauth-loopback.ts`), and the host-service is a Node process that binds 127.0.0.1 — so the loopback is the lower-surface, already-proven mechanism. A custom scheme would require Electron `setAsDefaultProtocolClient` registration in the main process (packaging-specific); `apps/desktop/scripts/patch-dev-protocol.ts` only patches a dev deep-link protocol, not OAuth capture. The host `LinearAuthService` arms a one-shot listener (`HttpLinearOAuthLoopback`) on `startConnect`, stashes the captured `{ code, state }` (state-validated), and the renderer polls `linear.auth.consumeCallback` then calls `completeConnect` — mirroring the OpenAI flow exactly. Manual-paste fallback if the port can't bind. The loopback port defaults to **52718** and is overridable via `LINEAR_DESKTOP_REDIRECT_PORT`; the redirect URI must be a registered redirect on the public Linear OAuth app. Date/Author: 2026-06-26, M1 implementation.
 
 - Decision: **Polling, not inbound webhooks**, for the local connection.
   Rationale: A local machine has no public URL to receive Linear webhooks; a 30–60s poll + manual Refresh is adequate for the ticket→PR use case. Date/Author: 2026-06-26.
@@ -145,7 +159,7 @@ Acceptance:
 
 ### M2 — Local ticket fetch + host store + stream
 Scope: see your Linear tickets from the local connection.
-Plan: a host runtime poller using `new LinearClient({ accessToken })` to fetch the viewer's issues (assigned / created / by team), a new host SQLite **`linear_tickets`** table (`bunx drizzle-kit generate --name="linear_tickets"` → 0015), and a tRPC query + subscription that streams them to the renderer (copy the pull-requests/memory streaming pattern). Interval poll (configurable, default 30–60s) + a manual **Refresh**; a **team picker** (port `getTeams`). No webhooks.
+Plan: a host runtime poller using `new LinearClient({ accessToken })` to fetch the viewer's issues (assigned / created / by team), a new host SQLite **`linear_tickets`** table (`bunx drizzle-kit generate --name="linear_tickets"` → **0016**, since M1 took 0015; also add `@linear/sdk` to `packages/host-service/package.json`), and a tRPC query + subscription that streams them to the renderer (copy the pull-requests/memory streaming pattern). Interval poll (configurable, default 30–60s) + a manual **Refresh**; a **team picker** (port `getTeams`). No webhooks.
 Acceptance:
 
     bun dev
@@ -192,7 +206,7 @@ From repo root `/Users/ajitsingh/Documents/GitHub/superset-vWorkspace` unless no
 
 Host SQLite migrations (M2; and any later tables), from `packages/host-service` — never hand-edit `drizzle/`:
 
-    bunx drizzle-kit generate --name="linear_tickets"     # M2 (→ 0015)
+    bunx drizzle-kit generate --name="linear_tickets"     # M2 (→ 0016; M1's linear_local_auth took 0015)
 
 
 ## Validation and Acceptance

@@ -1,0 +1,1 @@
+export { LinearLocalConnection } from "./LinearLocalConnection";
