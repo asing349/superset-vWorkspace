@@ -58,3 +58,19 @@ export type Finding = FindingsReport["findings"][number];
 
 /** A finding's code anchor ({ file, line?, symbol? }) — shares the guide shape. */
 export type FindingAnchor = Finding["anchor"];
+
+/**
+ * Review-thread types for the Threads tab (Wave 6, M4) — DERIVED from the host
+ * `git.getPullRequestThreads` output, the single source of truth (same
+ * browser-safe, type-only seam as the guide/findings types above).
+ */
+type GitOutputs = inferRouterOutputs<AppRouter>["git"];
+
+/** `{ reviewThreads, conversationComments }` — `git.getPullRequestThreads`. */
+export type PullRequestThreadsResult = GitOutputs["getPullRequestThreads"];
+
+/** One existing GitHub review thread ({ id, isResolved, path, line, comments }). */
+export type ReviewThread = PullRequestThreadsResult["reviewThreads"][number];
+
+/** One comment within a review thread ({ author, body, createdAt, … }). */
+export type ReviewThreadComment = ReviewThread["comments"][number];

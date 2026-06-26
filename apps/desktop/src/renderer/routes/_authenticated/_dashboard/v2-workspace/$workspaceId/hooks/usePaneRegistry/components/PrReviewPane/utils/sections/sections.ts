@@ -6,9 +6,11 @@
  *   - "findings" — the wave-6 grounded review findings (empty state until the
  *     button-only `prReview.reviewPr` runs; anchors jump back to the Diff tab).
  *   - "guide"    — the memory-grounded review guide (wave 5).
+ *   - "threads"  — the PR's existing GitHub review threads (wave-6 M4), read via
+ *     `git.getPullRequestThreads` and resolvable/unresolvable in place.
  */
 
-export type PrReviewSection = "diff" | "findings" | "guide";
+export type PrReviewSection = "diff" | "findings" | "guide" | "threads";
 
 export interface PrReviewSectionDef {
 	id: PrReviewSection;
@@ -19,6 +21,7 @@ export const PR_REVIEW_SECTIONS: readonly PrReviewSectionDef[] = [
 	{ id: "diff", label: "Diff" },
 	{ id: "findings", label: "Findings" },
 	{ id: "guide", label: "Guide" },
+	{ id: "threads", label: "Threads" },
 ];
 
 /** The default tab a freshly-opened window lands on. */

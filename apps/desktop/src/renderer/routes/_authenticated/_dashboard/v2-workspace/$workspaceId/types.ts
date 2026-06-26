@@ -126,8 +126,11 @@ export interface MemoryPaneData {
 export interface PrReviewPaneData {
 	/** The PR this window reviews (the single-instance + getDiff key). */
 	prNumber: number;
-	/** Active tab: the code diff, the wave-6 review findings, or the review guide. */
-	section: "diff" | "findings" | "guide";
+	/**
+	 * Active tab: the code diff, the wave-6 review findings, the review guide, or
+	 * the wave-6 M4 existing-review-threads tab.
+	 */
+	section: "diff" | "findings" | "guide" | "threads";
 	/**
 	 * Anchor target for the Diff tab (M5). Set when a Guide claim is clicked:
 	 * the pane switches to `section:"diff"` and the Diff CodeView scrolls to

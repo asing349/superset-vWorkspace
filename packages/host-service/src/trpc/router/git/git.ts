@@ -11,13 +11,12 @@ import type {
 	CheckRun,
 	CheckStatusState,
 	Commit,
-	IssueComment,
 	MergeableState,
 	PullRequestReviewDecision,
-	PullRequestReviewThread,
 	PullRequestState,
 } from "./types";
 import { gitConfigWrite } from "./utils/config-write";
+import { fetchReviewThreads } from "./utils/fetch-review-threads";
 import {
 	getChangedFilesForDiff,
 	getDefaultBranchName,
@@ -25,11 +24,6 @@ import {
 } from "./utils/git-helpers";
 import { getGitStatusSnapshot } from "./utils/git-status";
 import { gitStatusRefreshLimiter } from "./utils/git-status-refresh-limiter";
-import {
-	type GraphQLThreadsResult,
-	parseGraphQLThreads,
-	REVIEW_THREADS_QUERY,
-} from "./utils/graphql";
 import { resolveWorktreePath } from "./utils/resolve-worktree";
 
 function assertSafeRelativePath(filePath: string): void {
@@ -574,120 +568,98 @@ export const gitRouter = router({
 
 	getPullRequestThreads: queryProcedure
 		.meta({ timeoutMs: 30_000 })
-		.input(z.object({ workspaceId: z.string() }))
+		// Two callers, one fetch (Wave 6, M4): the workspace surfaces pass
+		// `{ workspaceId }` (repo + PR number resolved from the workspace's
+		// project), while the PR-review pane reviews an ARBITRARY PR and passes
+		// `{ owner, name, prNumber }` straight through (no workspace required).
+		.input(
+			z.union([
+				z.object({ workspaceId: z.string() }),
+				z.object({
+					owner: z.string().min(1),
+					name: z.string().min(1),
+					prNumber: z.number().int().positive(),
+				}),
+			]),
+		)
 		.query(async ({ ctx, input }) => {
-			const workspace = ctx.db.query.workspaces
-				.findFirst({ where: eq(workspaces.id, input.workspaceId) })
-				.sync();
-			if (!workspace) {
-				throw new TRPCError({
-					code: "NOT_FOUND",
-					message: "Workspace not found",
-				});
-			}
-			if (!workspace.pullRequestId) {
-				return { reviewThreads: [], conversationComments: [] };
-			}
+			let owner: string;
+			let name: string;
+			let prNumber: number;
 
-			const pr = ctx.db.query.pullRequests
-				.findFirst({ where: eq(pullRequests.id, workspace.pullRequestId) })
-				.sync();
-			if (!pr) {
-				throw new TRPCError({
-					code: "INTERNAL_SERVER_ERROR",
-					message: `Pull request ${workspace.pullRequestId} not found in database`,
-				});
-			}
-
-			let repo: { owner: string; name: string };
-			try {
-				repo = await resolveGithubRepo(ctx, workspace.projectId);
-			} catch (err) {
-				// Expected resolver failures (project not set up locally, no
-				// GitHub remote) degrade silently — the review tab just stays
-				// empty. Anything else is a real bug; propagate it.
-				if (err instanceof TRPCError) {
+			if ("workspaceId" in input) {
+				const workspace = ctx.db.query.workspaces
+					.findFirst({ where: eq(workspaces.id, input.workspaceId) })
+					.sync();
+				if (!workspace) {
+					throw new TRPCError({
+						code: "NOT_FOUND",
+						message: "Workspace not found",
+					});
+				}
+				if (!workspace.pullRequestId) {
 					return { reviewThreads: [], conversationComments: [] };
 				}
-				throw err;
+
+				const pr = ctx.db.query.pullRequests
+					.findFirst({ where: eq(pullRequests.id, workspace.pullRequestId) })
+					.sync();
+				if (!pr) {
+					throw new TRPCError({
+						code: "INTERNAL_SERVER_ERROR",
+						message: `Pull request ${workspace.pullRequestId} not found in database`,
+					});
+				}
+
+				let repo: { owner: string; name: string };
+				try {
+					repo = await resolveGithubRepo(ctx, workspace.projectId);
+				} catch (err) {
+					// Expected resolver failures (project not set up locally, no
+					// GitHub remote) degrade silently — the review tab just stays
+					// empty. Anything else is a real bug; propagate it.
+					if (err instanceof TRPCError) {
+						return { reviewThreads: [], conversationComments: [] };
+					}
+					throw err;
+				}
+
+				owner = repo.owner;
+				name = repo.name;
+				prNumber = pr.prNumber;
+			} else {
+				owner = input.owner;
+				name = input.name;
+				prNumber = input.prNumber;
 			}
 
 			const octokit = await ctx.github();
-
-			let reviewThreads: PullRequestReviewThread[] = [];
-			try {
-				const result: GraphQLThreadsResult = await octokit.graphql(
-					REVIEW_THREADS_QUERY,
-					{
-						owner: repo.owner,
-						name: repo.name,
-						prNumber: pr.prNumber,
-					},
-				);
-				reviewThreads = parseGraphQLThreads(result);
-			} catch (error) {
-				console.warn(
-					"[git.getPullRequestThreads] Failed to fetch review threads:",
-					error,
-				);
-			}
-
-			const conversationComments: IssueComment[] = [];
-			try {
-				let page = 1;
-				let hasMore = true;
-				while (hasMore) {
-					const { data: comments } = await octokit.issues.listComments({
-						owner: repo.owner,
-						repo: repo.name,
-						issue_number: pr.prNumber,
-						per_page: 100,
-						page,
-					});
-					for (const c of comments) {
-						const body = c.body?.trim();
-						if (!body) continue;
-						conversationComments.push({
-							id: c.id,
-							user: {
-								login: c.user?.login ?? "ghost",
-								avatarUrl: c.user?.avatar_url ?? "",
-							},
-							body,
-							createdAt: c.created_at ?? "",
-							htmlUrl: c.html_url ?? "",
-						});
-					}
-					hasMore = comments.length === 100;
-					page++;
-				}
-			} catch (error) {
-				console.warn(
-					"[git.getPullRequestThreads] Failed to fetch conversation comments:",
-					error,
-				);
-			}
-
-			return { reviewThreads, conversationComments };
+			return fetchReviewThreads({ octokit, owner, name, prNumber });
 		}),
 
 	setReviewThreadResolution: protectedProcedure
+		// `workspaceId` is optional (Wave 6, M4): the GraphQL resolve/unresolve
+		// only needs the global thread node id, so the PR-review pane can toggle a
+		// thread for any PR without a workspace. When a workspace surface DOES pass
+		// it, the existence guard below still runs (keeps the v1/v2 callers green).
 		.input(
 			z.object({
-				workspaceId: z.string(),
-				threadId: z.string(),
+				workspaceId: z.string().optional(),
+				threadId: z.string().min(1),
 				resolved: z.boolean(),
 			}),
 		)
 		.mutation(async ({ ctx, input }) => {
-			const workspace = ctx.db.query.workspaces
-				.findFirst({ where: eq(workspaces.id, input.workspaceId) })
-				.sync();
-			if (!workspace) {
-				throw new TRPCError({
-					code: "NOT_FOUND",
-					message: "Workspace not found",
-				});
+			if (input.workspaceId) {
+				const workspace = ctx.db.query.workspaces
+					.findFirst({ where: eq(workspaces.id, input.workspaceId) })
+					.sync();
+				if (!workspace) {
+					throw new TRPCError({
+						code: "NOT_FOUND",
+						message: "Workspace not found",
+					});
+				}
 			}
 
 			const octokit = await ctx.github();

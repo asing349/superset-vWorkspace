@@ -1,6 +1,8 @@
 import { cn } from "@superset/ui/utils";
 import { LuExternalLink } from "react-icons/lu";
+import type { PrTarget } from "../../utils/parsePrTarget";
 import { PR_REVIEW_SECTIONS, type PrReviewSection } from "../../utils/sections";
+import { PrMergeButton } from "./components/PrMergeButton";
 
 interface PrReviewHeaderProps {
 	prNumber: number;
@@ -8,20 +10,30 @@ interface PrReviewHeaderProps {
 	title?: string;
 	/** PR html_url, when known — renders an "open on GitHub" affordance. */
 	url?: string;
+	/** PR's GitHub coordinates (owner/repo) for the M4 merge action; null hides it. */
+	mergeTarget?: PrTarget | null;
+	/** Whether the PR is still open (only then is the merge button shown). */
+	canMerge?: boolean;
+	/** Refresh PR state after a successful merge (re-read the PR list row). */
+	onMerged?: () => void;
 	activeSection: PrReviewSection;
 	onSelectSection: (section: PrReviewSection) => void;
 }
 
 /**
- * The PR-review window header: the PR identity + an external link, and the
- * Diff | Guide segmented control (sub-tabs). The segmented control is the
- * Memory panel's `MemoryPanelHeader` pattern (underline-on-active nav), kept in
- * lockstep with `PR_REVIEW_SECTIONS`.
+ * The PR-review window header: the PR identity + an external link + the M4
+ * confirm-gated merge button, and the Diff | Findings | Guide | Threads
+ * segmented control (sub-tabs). The segmented control is the Memory panel's
+ * `MemoryPanelHeader` pattern (underline-on-active nav), kept in lockstep with
+ * `PR_REVIEW_SECTIONS`.
  */
 export function PrReviewHeader({
 	prNumber,
 	title,
 	url,
+	mergeTarget,
+	canMerge = false,
+	onMerged,
 	activeSection,
 	onSelectSection,
 }: PrReviewHeaderProps) {
@@ -37,12 +49,19 @@ export function PrReviewHeader({
 				>
 					{title ?? `PR #${prNumber}`}
 				</span>
+				{canMerge ? (
+					<PrMergeButton
+						target={mergeTarget ?? null}
+						prNumber={prNumber}
+						onMerged={onMerged}
+					/>
+				) : null}
 				{url ? (
 					<a
 						href={url}
 						target="_blank"
 						rel="noreferrer"
-						className="ml-auto flex shrink-0 items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+						className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
 						title="Open on GitHub"
 					>
 						<LuExternalLink className="size-3.5" />

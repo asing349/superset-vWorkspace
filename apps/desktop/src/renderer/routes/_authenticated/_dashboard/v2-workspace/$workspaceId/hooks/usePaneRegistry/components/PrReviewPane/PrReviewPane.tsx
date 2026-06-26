@@ -6,8 +6,10 @@ import { FindingsTab } from "./components/FindingsTab";
 import { GuideTab } from "./components/GuideTab";
 import { PrDiffView } from "./components/PrDiffView";
 import { PrReviewHeader } from "./components/PrReviewHeader";
+import { ThreadsTab } from "./components/ThreadsTab";
 import { useGenerateGuide } from "./hooks/useGenerateGuide";
 import { useReviewPr } from "./hooks/useReviewPr";
+import { useReviewThreads } from "./hooks/useReviewThreads";
 import type { GuideAnchor } from "./types";
 import { parsePrTarget } from "./utils/parsePrTarget";
 import { type PrReviewSection, resolvePrReviewSection } from "./utils/sections";
@@ -70,21 +72,36 @@ export function PrReviewPane({ context, projectId }: PrReviewPaneProps) {
 	// Best-effort PR metadata for the header (title + GitHub link). The list this
 	// PR was opened from is the same source; cache-first so the header fills in
 	// without blocking the diff. A failure just leaves the "#N" fallback title.
+	const prListUtils = electronTrpc.useUtils();
 	const prListQuery = electronTrpc.projects.listPullRequests.useQuery(
 		{ projectId, includeClosed: true },
 		{ staleTime: 60_000, enabled: Boolean(projectId) },
 	);
 	const prRow = (prListQuery.data ?? []).find((pr) => pr.prNumber === prNumber);
 
-	// GitHub coordinates for the M3 "Post comment" action, derived from the PR's
-	// html URL (the same row the header links to). Null until the row loads or for
-	// a non-GitHub URL — the Findings tab then disables posting.
-	const commentTarget = useMemo(() => parsePrTarget(prRow?.url), [prRow?.url]);
+	// GitHub coordinates for the M3 "Post comment" + M4 merge/threads actions,
+	// derived from the PR's html URL (the same row the header links to). Null until
+	// the row loads or for a non-GitHub URL — the dependent actions then disable.
+	const prTarget = useMemo(() => parsePrTarget(prRow?.url), [prRow?.url]);
+
+	// Merge is only offered while the PR is open (M4). The PR list row's `state`
+	// ("open" | "draft" | "merged" | "closed") is GitHub's already-merged/closed
+	// guard at the UI layer; `octokit.pulls.merge` is the authoritative one.
+	const canMerge = prRow?.state === "open";
+
+	// Re-read the PR list after a merge so the row's `state` flips (the merge
+	// button then hides) — the M4 post-merge refresh, mirroring PRStatusGroup.
+	const handleMerged = useCallback(() => {
+		void prListUtils.projects.listPullRequests.invalidate({ projectId });
+	}, [prListUtils, projectId]);
 
 	const guideState = useGenerateGuide({ projectId, prNumber });
 	// Cache-first read of any prior review (button-only mutation lives inside).
 	// Mounting/reading NEVER reviews — only the Findings tab's button does.
 	const reviewState = useReviewPr({ projectId, prNumber });
+	// Existing GitHub review threads for THIS PR (M4), keyed by parsed owner/repo +
+	// number — reads are gated on `prTarget`, resolution is an explicit click.
+	const threadsState = useReviewThreads({ target: prTarget, prNumber });
 
 	return (
 		<div className="flex h-full min-h-0 w-full flex-col bg-background">
@@ -92,6 +109,9 @@ export function PrReviewPane({ context, projectId }: PrReviewPaneProps) {
 				prNumber={prNumber}
 				title={prRow?.title}
 				url={prRow?.url}
+				mergeTarget={prTarget}
+				canMerge={canMerge}
+				onMerged={handleMerged}
 				activeSection={section}
 				onSelectSection={setSection}
 			/>
@@ -109,9 +129,11 @@ export function PrReviewPane({ context, projectId }: PrReviewPaneProps) {
 						reviewState={reviewState}
 						projectId={projectId}
 						prNumber={prNumber}
-						commentTarget={commentTarget}
+						commentTarget={prTarget}
 						onOpenAnchor={handleOpenAnchor}
 					/>
+				) : section === "threads" ? (
+					<ThreadsTab threadsState={threadsState} />
 				) : (
 					<GuideTab guideState={guideState} onOpenAnchor={handleOpenAnchor} />
 				)}
