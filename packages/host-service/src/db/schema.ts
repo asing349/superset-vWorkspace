@@ -580,3 +580,67 @@ export const prReviewFindings = sqliteTable(
 		),
 	],
 );
+
+/**
+ * Per-project AI-reviewer onboarding/config (Wave 6, M5). ONE row per project
+ * (unique `(project_id)`), mirroring the wave-4 `approved_ticket_context`
+ * per-project config precedent. Created when a developer runs "Set up AI
+ * reviewer" and re-baselined on an explicit "Refresh context".
+ *
+ * Holds three things:
+ *  1. `enabled` — whether the reviewer has been onboarded ("ready") for this
+ *     project. Until a row exists (and is enabled) the PR-review pane surfaces
+ *     the reviewer as "not configured" and offers the setup card.
+ *  2. `groundingLayersJson` — which wave-3 context layers the reviewer grounds
+ *     on (`practice-project` / `practice-global` / `project-index` /
+ *     `playbooks`), the same layers `buildGroundingServices` assembles.
+ *  3. A **fingerprint/version snapshot** of the context it was configured
+ *     against: the project + global Coding-Practice version ids/numbers, the
+ *     project-index `commitSha` / `lastIndexedAt` / entry count, a
+ *     `settingsHash` (FNV-1a of the grounding settings) and an overall
+ *     `contextHash` (FNV-1a of the whole snapshot). "Refresh context" diffs the
+ *     CURRENT context against this snapshot via `isFingerprintStale` to report
+ *     WHAT changed — it never auto-runs.
+ *
+ * `stale` is a flag-only signal flipped by the app.ts listeners (practice
+ * written / index refreshed / PR head changed) so the UI can OFFER a refresh;
+ * it is never the trigger for an automatic refresh (the wave-5/6 button-only
+ * guardrail). Nothing here is free model/text — only enum layer ids, version
+ * ids and hashes — so there is no model output to redact (Assumption A3/A5).
+ * Local-only (host SQLite); the cloud schema stays frozen.
+ */
+export const prReviewReviewerConfig = sqliteTable(
+	"pr_review_reviewer_config",
+	{
+		id: text().primaryKey(),
+		projectId: text("project_id")
+			.notNull()
+			.references(() => projects.id, { onDelete: "cascade" }),
+		enabled: integer({ mode: "boolean" }).notNull().default(false),
+		// JSON string array of grounding-layer ids the reviewer is configured on.
+		groundingLayersJson: text("grounding_layers_json").notNull().default("[]"),
+		// --- context snapshot (the fingerprint the refresh diffs against) -------
+		practiceProjectVersionId: text("practice_project_version_id"),
+		practiceProjectVersion: integer("practice_project_version"),
+		practiceGlobalVersionId: text("practice_global_version_id"),
+		practiceGlobalVersion: integer("practice_global_version"),
+		indexCommitSha: text("index_commit_sha"),
+		indexLastIndexedAt: integer("index_last_indexed_at"),
+		indexEntryCount: integer("index_entry_count").notNull().default(0),
+		// FNV-1a hash of the grounding settings (which layers are on).
+		settingsHash: text("settings_hash").notNull().default(""),
+		// FNV-1a hash of the whole snapshot — the single value the refresh diffs.
+		contextHash: text("context_hash").notNull().default(""),
+		stale: integer("stale", { mode: "boolean" }).notNull().default(false),
+		configuredBy: text("configured_by"),
+		createdAt: integer("created_at")
+			.notNull()
+			.$defaultFn(() => Date.now()),
+		updatedAt: integer("updated_at")
+			.notNull()
+			.$defaultFn(() => Date.now()),
+	},
+	(table) => [
+		uniqueIndex("pr_review_reviewer_config_project_unique").on(table.projectId),
+	],
+);

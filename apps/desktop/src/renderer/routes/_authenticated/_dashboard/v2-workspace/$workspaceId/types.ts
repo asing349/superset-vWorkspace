@@ -109,8 +109,11 @@ export interface CommentPaneData {
  * is active; `selectedPlaybookId` remembers the open Playbook detail.
  */
 export interface MemoryPaneData {
-	/** Active section/sub-tab: playbooks + practice + graph + settings. */
-	section?: "playbooks" | "practice" | "graph" | "settings";
+	/**
+	 * Active section/sub-tab: playbooks + practice + graph + settings, plus the
+	 * wave-6 M5 cross-project AI-reviewer "reviewer" (manage-context) section.
+	 */
+	section?: "playbooks" | "practice" | "graph" | "settings" | "reviewer";
 	/** The Playbook whose detail is open, if any. */
 	selectedPlaybookId?: string | null;
 }

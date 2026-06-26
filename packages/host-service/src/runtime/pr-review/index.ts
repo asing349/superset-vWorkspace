@@ -76,3 +76,25 @@ export {
 	reviewPr,
 	reviewPrCore,
 } from "./review-pr.ts";
+export {
+	getReviewerConfigRow,
+	markReviewerContextStale,
+	parseGroundingLayers,
+	type ReviewerConfigRow,
+	snapshotFromRow,
+	upsertReviewerConfig,
+} from "./reviewer-config-cache.ts";
+export {
+	buildReviewerContextSnapshot,
+	computeContextHash,
+	computeSettingsHash,
+	DEFAULT_REVIEWER_GROUNDING_LAYERS,
+	diffReviewerContext,
+	normalizeGroundingLayers,
+	type ReviewerContextChange,
+	type ReviewerContextChangeKind,
+	type ReviewerContextDiff,
+	type ReviewerContextInputs,
+	type ReviewerContextSnapshot,
+	type ReviewerGroundingLayer,
+} from "./reviewer-context.ts";

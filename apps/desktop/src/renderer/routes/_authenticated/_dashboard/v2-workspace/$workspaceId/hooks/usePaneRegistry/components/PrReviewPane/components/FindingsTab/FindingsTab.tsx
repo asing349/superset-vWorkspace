@@ -1,5 +1,6 @@
 import { Button } from "@superset/ui/button";
 import { LuRefreshCw, LuShieldCheck } from "react-icons/lu";
+import { ReviewerContextBar } from "../../../ReviewerContext";
 import { usePostFindingComment } from "../../hooks/usePostFindingComment";
 import type { UseReviewPrResult } from "../../hooks/useReviewPr";
 import type { FindingAnchor } from "../../types";
@@ -48,37 +49,49 @@ export function FindingsTab({
 		commitId: report?.headSha ?? null,
 	});
 
+	// The per-project onboarding / refresh bar (M5) — surfaces the reviewer's
+	// "not set up" / "context changed" state above the findings without gating the
+	// Review-PR button. Renders nothing when the reviewer is set up + current.
+	const reviewerBar = <ReviewerContextBar projectId={projectId} />;
+
 	if (!report) {
 		// Cache-first (#9): while the read is still in flight, show a neutral
 		// loading line rather than flashing the "no review" CTA.
 		if (isLoadingCached) {
 			return (
-				<div className="flex h-full w-full cursor-text select-text items-center justify-center text-sm text-muted-foreground">
-					Loading findings…
+				<div className="flex h-full min-h-0 w-full flex-col">
+					{reviewerBar}
+					<div className="flex flex-1 cursor-text select-text items-center justify-center text-sm text-muted-foreground">
+						Loading findings…
+					</div>
 				</div>
 			);
 		}
 		return (
-			<div className="flex h-full w-full flex-col items-center justify-center gap-4 px-6 text-center">
-				<LuShieldCheck className="size-8 text-muted-foreground" />
-				<div className="max-w-sm space-y-1">
-					<p className="text-sm font-medium text-foreground">No review yet</p>
-					<p className="cursor-text select-text text-xs text-muted-foreground">
-						Run a grounded review of this PR — structured findings with a
-						severity and category, each anchored to a file and line in the diff.
-						It runs only when you ask, on your local AI session.
-					</p>
+			<div className="flex h-full min-h-0 w-full flex-col">
+				{reviewerBar}
+				<div className="flex flex-1 flex-col items-center justify-center gap-4 px-6 text-center">
+					<LuShieldCheck className="size-8 text-muted-foreground" />
+					<div className="max-w-sm space-y-1">
+						<p className="text-sm font-medium text-foreground">No review yet</p>
+						<p className="cursor-text select-text text-xs text-muted-foreground">
+							Run a grounded review of this PR — structured findings with a
+							severity and category, each anchored to a file and line in the
+							diff. It runs only when you ask, on your local AI session.
+						</p>
+					</div>
+					<Button size="sm" onClick={review} disabled={isReviewing}>
+						<LuShieldCheck className="size-4" />
+						{isReviewing ? "Reviewing…" : "Review PR"}
+					</Button>
 				</div>
-				<Button size="sm" onClick={review} disabled={isReviewing}>
-					<LuShieldCheck className="size-4" />
-					{isReviewing ? "Reviewing…" : "Review PR"}
-				</Button>
 			</div>
 		);
 	}
 
 	return (
 		<div className="flex h-full min-h-0 w-full flex-col">
+			{reviewerBar}
 			<div className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-2">
 				{report.baselineOnly ? (
 					<span className="cursor-text select-text rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">

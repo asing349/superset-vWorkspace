@@ -121,6 +121,34 @@ describe("IndexRefreshWatcher (B3 fs:events hook)", () => {
 		expect(fakeWatcher.hasListener).toBe(false);
 	});
 
+	it("fires onProjectIndexRefreshed with the project id after a targeted refresh", async () => {
+		const service = new ProjectIndexService({ db });
+		await service.buildProjectIndex(projectId);
+
+		const refreshedProjects: string[] = [];
+		const fakeWatcher = new FakeGitWatcher();
+		const watcher = new IndexRefreshWatcher({
+			db,
+			indexService: service,
+			gitWatcher: fakeWatcher as unknown as GitWatcher,
+			onProjectIndexRefreshed: ({ projectId: id }) => {
+				refreshedProjects.push(id);
+			},
+		});
+		watcher.start();
+
+		fakeWatcher.emit({ workspaceId, paths: ["apps/web/src/page.tsx"] });
+		await new Promise((r) => setTimeout(r, 10));
+		expect(refreshedProjects).toEqual([projectId]);
+
+		// A broad change (no paths) must NOT fire the hook.
+		fakeWatcher.emit({ workspaceId });
+		await new Promise((r) => setTimeout(r, 10));
+		expect(refreshedProjects).toEqual([projectId]);
+
+		watcher.stop();
+	});
+
 	it("ignores broad changes (no paths) — no targeted refresh", async () => {
 		const service = new ProjectIndexService({ db });
 		await service.buildProjectIndex(projectId);

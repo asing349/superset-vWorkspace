@@ -20,16 +20,26 @@ export class IndexRefreshWatcher {
 	private readonly db: HostDb;
 	private readonly indexService: ProjectIndexService;
 	private readonly gitWatcher: GitWatcher;
+	private readonly onProjectIndexRefreshed?: (input: {
+		projectId: string;
+	}) => void;
 	private unsubscribe: (() => void) | null = null;
 
 	constructor(options: {
 		db: HostDb;
 		indexService: ProjectIndexService;
 		gitWatcher: GitWatcher;
+		/**
+		 * Wave-6 M5: fired AFTER a targeted index refresh for a project, so the
+		 * app.ts wiring can flag any per-project AI-reviewer context `stale`
+		 * (flag-only — never an automatic refresh). Optional; best-effort.
+		 */
+		onProjectIndexRefreshed?: (input: { projectId: string }) => void;
 	}) {
 		this.db = options.db;
 		this.indexService = options.indexService;
 		this.gitWatcher = options.gitWatcher;
+		this.onProjectIndexRefreshed = options.onProjectIndexRefreshed;
 	}
 
 	start(): void {
@@ -61,6 +71,11 @@ export class IndexRefreshWatcher {
 			projectId,
 			paths: event.paths,
 		});
+
+		// Wave-6 M5: the index just moved for this project — let the host flag the
+		// per-project reviewer context `stale` (flag-only; the listener swallows
+		// its own errors, so a hook throw can't break the refresh).
+		this.onProjectIndexRefreshed?.({ projectId });
 	}
 
 	private resolveProjectId(workspaceId: string): string | null {

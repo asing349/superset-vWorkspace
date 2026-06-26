@@ -33,6 +33,10 @@ import {
 // the single place that knows about both the PR runtime and the guide cache.
 import { markFindingsStaleOnHeadChange } from "./runtime/pr-review/findings-cache";
 import { markGuideStaleOnHeadChange } from "./runtime/pr-review/guide-cache";
+// M5: per-project AI-reviewer context staleness. Imported by PATH (like the
+// findings-cache hook) — app.ts is the single place wiring the PR/memory
+// runtimes to the reviewer-config flag.
+import { markReviewerContextStale } from "./runtime/pr-review/reviewer-config-cache";
 import { PullRequestRuntimeManager } from "./runtime/pull-requests";
 import {
 	createApiTaskWriteback,
@@ -171,6 +175,10 @@ export function createApp(options: CreateAppOptions): CreateAppResult {
 			// `stale` so the UI offers a "Re-review" button — flag-only, never an
 			// automatic re-review (the button-only guardrail).
 			markFindingsStaleOnHeadChange({ db, projectId, prNumber, newHeadSha });
+			// Wave-6 M5: a new commit can move the code the reviewer grounds on, so
+			// flag the project's reviewer context `stale` (flag-only — never an
+			// automatic refresh; the developer clicks "Refresh context").
+			markReviewerContextStale({ db, projectId });
 		},
 	});
 	pullRequestRuntime.start();
@@ -181,6 +189,11 @@ export function createApp(options: CreateAppOptions): CreateAppResult {
 		db,
 		indexService: memoryIndex,
 		gitWatcher,
+		// Wave-6 M5: when the project index moves, flag the per-project reviewer
+		// context `stale` (flag-only — the developer clicks "Refresh context").
+		onProjectIndexRefreshed: ({ projectId }) => {
+			markReviewerContextStale({ db, projectId });
+		},
 	});
 	indexRefreshWatcher.start();
 	// Superset Memory (B7): optional local semantic embeddings. OFF BY DEFAULT;
@@ -199,6 +212,10 @@ export function createApp(options: CreateAppOptions): CreateAppResult {
 		db,
 		onProjectPracticeWritten: ({ projectId }) => {
 			regenerateMemorySkillForProject({ db, projectId });
+			// Wave-6 M5: a practice write changes what the reviewer grounds on —
+			// flag the per-project reviewer context `stale` (flag-only; the developer
+			// clicks "Refresh context"). Never an automatic refresh.
+			markReviewerContextStale({ db, projectId });
 		},
 	});
 	// Superset Memory (B6): Obsidian vault generation + knowledge-graph data.

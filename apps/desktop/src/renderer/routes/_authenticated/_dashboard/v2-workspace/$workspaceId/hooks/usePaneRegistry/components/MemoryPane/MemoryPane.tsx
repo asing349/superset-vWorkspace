@@ -1,6 +1,7 @@
 import type { RendererContext } from "@superset/panes";
 import { useCallback } from "react";
 import type { MemoryPaneData, PaneViewerData } from "../../../../types";
+import { ReviewerContextManager } from "../ReviewerContext";
 import { GraphSection } from "./components/GraphSection";
 import { MemoryPanelHeader } from "./components/MemoryPanelHeader";
 import { PlaybookDetail } from "./components/PlaybookDetail";
@@ -56,7 +57,8 @@ export function MemoryPane({
 				next !== "playbooks" &&
 				next !== "practice" &&
 				next !== "graph" &&
-				next !== "settings"
+				next !== "settings" &&
+				next !== "reviewer"
 			) {
 				return;
 			}
@@ -152,6 +154,11 @@ export function MemoryPane({
 			{section === "settings" ? (
 				<div className="min-h-0 flex-1">
 					<SettingsSection embeddings={embeddings} />
+				</div>
+			) : null}
+			{section === "reviewer" ? (
+				<div className="min-h-0 flex-1">
+					<ReviewerContextManager />
 				</div>
 			) : null}
 		</div>

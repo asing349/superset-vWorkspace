@@ -17,6 +17,7 @@ import { portsRouter } from "./ports";
 import { prReviewRouter } from "./pr-review";
 import { projectRouter } from "./project";
 import { pullRequestsRouter } from "./pull-requests";
+import { reviewerRouter } from "./reviewer";
 import { settingsRouter } from "./settings";
 import { terminalRouter } from "./terminal";
 import { terminalAgentsRouter } from "./terminal-agents";
@@ -44,6 +45,7 @@ export const appRouter = router({
 	memory: memoryRouter,
 	notifications: notificationsRouter,
 	prReview: prReviewRouter,
+	reviewer: reviewerRouter,
 	pullRequests: pullRequestsRouter,
 	project: projectRouter,
 	ports: portsRouter,

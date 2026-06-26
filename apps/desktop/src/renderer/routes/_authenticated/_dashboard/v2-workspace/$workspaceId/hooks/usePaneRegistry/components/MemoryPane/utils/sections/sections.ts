@@ -6,11 +6,17 @@
  *   - B5 ships "practice" (consolidation review — enabled).
  *   - B6 ships "graph" (knowledge graph — enabled).
  *   - B7b ships "settings" (the embeddings toggle — enabled).
- * All four sections are now shipped; new sections add an entry here + a body
- * branch in `MemoryPane`, no header/layout rewrite.
+ *   - Wave-6 M5 ships "reviewer" (cross-project AI-reviewer manage-context).
+ * All sections are shipped; new sections add an entry here + a body branch in
+ * `MemoryPane`, no header/layout rewrite.
  */
 
-export type MemorySection = "playbooks" | "practice" | "graph" | "settings";
+export type MemorySection =
+	| "playbooks"
+	| "practice"
+	| "graph"
+	| "settings"
+	| "reviewer";
 
 export interface MemorySectionDef {
 	id: MemorySection;
@@ -26,6 +32,7 @@ export const MEMORY_SECTIONS: readonly MemorySectionDef[] = [
 	{ id: "practice", label: "Practice", enabled: true, milestone: "B5" },
 	{ id: "graph", label: "Graph", enabled: true, milestone: "B6" },
 	{ id: "settings", label: "Settings", enabled: true, milestone: "B7b" },
+	{ id: "reviewer", label: "Reviewer", enabled: true, milestone: "W6-M5" },
 ];
 
 /** The default (first enabled) section. */
