@@ -100,14 +100,26 @@ function renderFileForPrompt(file: PrDiffInput["files"][number]): string {
 	return `${header}\n${patch}`;
 }
 
+/** Max accepted business rules enumerated in the findings prompt. */
+const MAX_PROMPT_BUSINESS_RULES = 12;
+
 /**
  * Build the one-shot local-AI findings prompt. Deterministic + self-contained:
- * the model gets the PR metadata + the changed files' patches, and a STRICT
- * output contract constraining `severity`/`category` to the allowed enums and
- * `file` to the changed-file set. The parser ({@link parseFindingsReply}) re-
- * validates everything regardless — the prompt is guidance, not trust.
+ * the model gets the PR metadata + the changed files' patches, the project's
+ * ACCEPTED observed business rules to check the change against (Wave 6, M6 — the
+ * compounding grounding), and a STRICT output contract constraining
+ * `severity`/`category` to the allowed enums and `file` to the changed-file set.
+ * The parser ({@link parseFindingsReply}) re-validates everything regardless —
+ * the prompt is guidance, not trust.
  */
-export function buildFindingsPrompt({ diff }: { diff: PrDiffInput }): string {
+export function buildFindingsPrompt({
+	diff,
+	businessRules = [],
+}: {
+	diff: PrDiffInput;
+	/** Accepted observed business rules (redacted) to ground the review on. */
+	businessRules?: readonly string[];
+}): string {
 	const files = diff.files
 		.slice(0, MAX_PROMPT_FILES)
 		.map(renderFileForPrompt)
@@ -116,6 +128,18 @@ export function buildFindingsPrompt({ diff }: { diff: PrDiffInput }): string {
 		.slice(0, MAX_PROMPT_FILES)
 		.map((f) => f.filename)
 		.join(", ");
+
+	const rulesBlock =
+		businessRules.length > 0
+			? [
+					"",
+					"Known business rules / invariants for this project — flag any change",
+					"that VIOLATES one (category `business-logic`):",
+					...businessRules
+						.slice(0, MAX_PROMPT_BUSINESS_RULES)
+						.map((rule) => `- ${rule}`),
+				]
+			: [];
 
 	return [
 		"You are an expert code reviewer. Review the following pull request diff and",
@@ -127,6 +151,7 @@ export function buildFindingsPrompt({ diff }: { diff: PrDiffInput }): string {
 		diff.body ? `PR description:\n${diff.body}` : "PR has no description.",
 		"",
 		`Changed files (you may ONLY reference these): ${fileNames || "(none)"}`,
+		...rulesBlock,
 		"",
 		"Diff:",
 		files || "(empty diff)",

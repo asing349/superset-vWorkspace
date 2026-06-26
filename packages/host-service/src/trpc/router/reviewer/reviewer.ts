@@ -5,8 +5,10 @@ import { projects } from "../../../db/schema";
 import {
 	buildGroundingServices,
 	buildReviewerContextSnapshot,
+	computeBusinessRulesSignature,
 	DEFAULT_REVIEWER_GROUNDING_LAYERS,
 	diffReviewerContext,
+	getAcceptedObservedRules,
 	getReviewerConfigRow,
 	type ReviewerConfigRow,
 	type ReviewerContextDiff,
@@ -127,6 +129,10 @@ function gatherReviewerContextInputs(options: {
 	// The grounding adapter's `indexStatus` narrows to `{ indexed, entryCount }`;
 	// the full status (commit sha + last-indexed) comes from the index runtime.
 	const indexStatus = ctx.runtime.memoryIndex.indexStatus(projectId);
+	// Wave-6 M6: fold the ACCEPTED observed business rules' signature into the
+	// snapshot so accepting/reverting a rule moves the context hash (→ "Refresh
+	// context" detects an observed-business-rules change).
+	const acceptedRules = getAcceptedObservedRules({ db: ctx.db, projectId });
 
 	return {
 		groundingLayers,
@@ -137,6 +143,7 @@ function gatherReviewerContextInputs(options: {
 		indexCommitSha: indexStatus.commitSha,
 		indexLastIndexedAt: indexStatus.lastIndexedAt,
 		indexEntryCount: indexStatus.entryCount,
+		businessRulesSignature: computeBusinessRulesSignature(acceptedRules),
 	};
 }
 

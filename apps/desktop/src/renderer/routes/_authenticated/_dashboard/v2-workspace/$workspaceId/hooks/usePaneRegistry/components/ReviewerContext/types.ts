@@ -23,3 +23,15 @@ export type ReviewerContextChange = ReviewerContextDiff["changes"][number];
 
 /** `{ diff, config }` — exactly what `reviewer.refreshContext` returns. */
 export type ReviewerRefreshResult = ReviewerOutputs["refreshContext"];
+
+/**
+ * Observed-business-rules types for the M6 curation UI — DERIVED from the host
+ * `businessRules` router output (the single source of truth; a type-only import).
+ */
+type BusinessRulesOutputs = inferRouterOutputs<AppRouter>["businessRules"];
+
+/** One persisted observed business rule — exactly `businessRules.list[number]`. */
+export type ObservedRule = BusinessRulesOutputs["list"][number];
+
+/** The curation lifecycle state of an observed rule. */
+export type ObservedRuleState = ObservedRule["state"];

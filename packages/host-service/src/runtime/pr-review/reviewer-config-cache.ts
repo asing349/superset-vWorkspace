@@ -54,6 +54,7 @@ export function snapshotFromRow(
 		indexCommitSha: row.indexCommitSha,
 		indexLastIndexedAt: row.indexLastIndexedAt,
 		indexEntryCount: row.indexEntryCount,
+		businessRulesSignature: row.businessRulesSignature,
 		settingsHash: row.settingsHash,
 		contextHash: row.contextHash,
 	};
@@ -106,6 +107,7 @@ export function upsertReviewerConfig({
 		indexCommitSha: snapshot.indexCommitSha,
 		indexLastIndexedAt: snapshot.indexLastIndexedAt,
 		indexEntryCount: snapshot.indexEntryCount,
+		businessRulesSignature: snapshot.businessRulesSignature ?? "",
 		settingsHash: snapshot.settingsHash,
 		contextHash: snapshot.contextHash,
 		stale: false,

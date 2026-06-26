@@ -134,4 +134,30 @@ describe("buildFindingsPrompt", () => {
 		);
 		expect(prompt).toContain("ONLY a JSON object");
 	});
+
+	it("grounds the review on accepted observed business rules when supplied (M6)", () => {
+		const diff: PrDiffInput = {
+			prNumber: 9,
+			headSha: "sha-9",
+			baseBranch: "main",
+			body: null,
+			files: [
+				{
+					filename: "src/a.ts",
+					status: "modified",
+					patch: "@@ -1 +1 @@\n-a\n+b",
+					additions: 1,
+					deletions: 1,
+				},
+			],
+		};
+		const withRules = buildFindingsPrompt({
+			diff,
+			businessRules: ["Order total must never be negative"],
+		});
+		expect(withRules).toContain("Known business rules");
+		expect(withRules).toContain("Order total must never be negative");
+		// Absent when no rules are supplied.
+		expect(buildFindingsPrompt({ diff })).not.toContain("Known business rules");
+	});
 });

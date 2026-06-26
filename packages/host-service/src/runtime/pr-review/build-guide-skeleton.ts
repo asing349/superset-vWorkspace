@@ -79,12 +79,28 @@ export interface GuidePlaybookPort {
 	}): GuidePlaybook[];
 }
 
+/** A single accepted observed business rule, narrowed for grounding (M6). */
+export interface GuideBusinessRule {
+	rule: string;
+}
+
+/**
+ * Accepted observed business rules accessor (Wave 6, M6). The compounding
+ * grounding layer the reviewer WROTE on prior reviews; OPTIONAL so the wave-5
+ * guide path and existing fixtures (which don't supply it) keep working.
+ */
+export interface GuideBusinessRulesPort {
+	listAccepted(projectId: string): GuideBusinessRule[];
+}
+
 /** All grounding accessors the builder needs, bundled for injection. */
 export interface GuideGroundingServices {
 	retrieve: GuideRetrievePort;
 	index: GuideIndexPort;
 	practice: GuidePracticePort;
 	playbooks: GuidePlaybookPort;
+	/** Accepted observed business rules (Wave 6, M6). Optional — empty when absent. */
+	businessRules?: GuideBusinessRulesPort;
 }
 
 export interface BuildGuideSkeletonInput {
@@ -430,6 +446,22 @@ function buildProjectConventions(
 	};
 }
 
+/** How many accepted observed business rules to surface in the guide. */
+const MAX_BUSINESS_RULES = 12;
+
+function buildObservedBusinessRules(
+	rules: readonly GuideBusinessRule[],
+): GuideSection {
+	const items: GuideItem[] = rules
+		.slice(0, MAX_BUSINESS_RULES)
+		.map((rule) => ({ text: rule.rule }));
+	return {
+		id: "observed-business-rules",
+		title: "Observed business rules",
+		items,
+	};
+}
+
 function buildPriorPlaybooks(
 	projectId: string,
 	areaTags: readonly AreaTag[],
@@ -563,6 +595,18 @@ export async function buildGuideSkeleton(
 				buildPriorPlaybooks(projectId, areaTags, services.playbooks),
 				buildWhereXLives(projectId, new Set(touchedPaths), services.index),
 			);
+		}
+	}
+
+	// Wave-6 M6: surface the project's ACCEPTED observed business rules — the
+	// behavioral grounding the reviewer wrote on prior reviews. Independent of the
+	// index-grounded branch (rules can exist without a built index); pushed only
+	// when there are accepted rules, so the deterministic baseline stays unchanged.
+	if (projectId !== null && services.businessRules) {
+		const acceptedRules = services.businessRules.listAccepted(projectId);
+		if (acceptedRules.length > 0) {
+			sections.push(buildObservedBusinessRules(acceptedRules));
+			grounded = true;
 		}
 	}
 

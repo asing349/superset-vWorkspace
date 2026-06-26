@@ -629,6 +629,13 @@ export const prReviewReviewerConfig = sqliteTable(
 		indexEntryCount: integer("index_entry_count").notNull().default(0),
 		// FNV-1a hash of the grounding settings (which layers are on).
 		settingsHash: text("settings_hash").notNull().default(""),
+		// Wave-6 M6: FNV-1a signature of the project's ACCEPTED observed business
+		// rules (their ids + versions) at snapshot time. Folded into `contextHash`
+		// so accepting/reverting a rule moves the context (→ "Refresh context"
+		// detects observed-business-rules changes, same as a practice/index move).
+		businessRulesSignature: text("business_rules_signature")
+			.notNull()
+			.default(""),
 		// FNV-1a hash of the whole snapshot — the single value the refresh diffs.
 		contextHash: text("context_hash").notNull().default(""),
 		stale: integer("stale", { mode: "boolean" }).notNull().default(false),
@@ -642,5 +649,66 @@ export const prReviewReviewerConfig = sqliteTable(
 	},
 	(table) => [
 		uniqueIndex("pr_review_reviewer_config_project_unique").on(table.projectId),
+	],
+);
+
+/**
+ * Observed business rules / invariants (Wave 6, M6) — the compounding
+ * grounding layer the AI reviewer WRITES. The project index is structural
+ * ("where X lives"); this table is the BEHAVIORAL layer the structural index
+ * does not capture today: domain rules/invariants the reviewer INFERS at review
+ * time (from the PR body + diff + project practice + playbook gotchas, via the
+ * LOCAL-AI path only — no new cloud model call).
+ *
+ * Curated exactly like the wave-3 practice consolidation — propose → accept →
+ * revert, versioned — so the developer decides which observed rules become
+ * ACTIVE grounding (nothing is auto-accepted):
+ *  - `state: "proposed"` — inferred at review time, awaiting curation. Surfaced
+ *    as a pending proposal in Manage context; NOT yet fed to grounding.
+ *  - `state: "accepted"` — the developer accepted it; it now grounds later
+ *    reviews (`buildGroundingServices` → the findings prompt + the guide).
+ *  - `state: "reverted"` — the developer rejected a proposal or retired an
+ *    accepted rule; kept (never deleted) for a linear, auditable history.
+ * `version` is a monotonic per-row counter bumped on every state transition
+ * (the auditable "versioned" history); `confidence` carries the inferred score.
+ *
+ * `rule` is REDACTED before it is ever written (Assumption A3/A5 — nothing
+ * stored unredacted), like the wave-4 `approved_ticket_context.content`.
+ * `sourcePrNumber` records the PR the rule was inferred from (provenance).
+ * Local-only (host SQLite); the cloud schema stays frozen.
+ */
+export const prReviewObservedBusinessRules = sqliteTable(
+	"pr_review_observed_business_rules",
+	{
+		id: text().primaryKey(),
+		projectId: text("project_id")
+			.notNull()
+			.references(() => projects.id, { onDelete: "cascade" }),
+		// The REDACTED rule/invariant text (model-authored → scrubbed before write).
+		rule: text().notNull(),
+		// A `FindingCategory` (`business-logic` by default) for grouping/badging.
+		category: text().notNull().default("business-logic"),
+		// Curation lifecycle: 'proposed' → 'accepted' | 'reverted'.
+		state: text().notNull().default("proposed"),
+		// Monotonic per-row version, bumped on every state transition.
+		version: integer().notNull().default(1),
+		// Inferred confidence (0–100); deterministic default for hand-seeded rules.
+		confidence: integer().notNull().default(0),
+		// The PR the rule was inferred from (provenance), null for a manual rule.
+		sourcePrNumber: integer("source_pr_number"),
+		provenance: text(),
+		createdAt: integer("created_at")
+			.notNull()
+			.$defaultFn(() => Date.now()),
+		updatedAt: integer("updated_at")
+			.notNull()
+			.$defaultFn(() => Date.now()),
+	},
+	(table) => [
+		index("pr_review_observed_business_rules_project_idx").on(table.projectId),
+		index("pr_review_observed_business_rules_project_state_idx").on(
+			table.projectId,
+			table.state,
+		),
 	],
 );

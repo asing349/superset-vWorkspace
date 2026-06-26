@@ -107,6 +107,31 @@ describe("reviewer-context (M5 change detection)", () => {
 		expect(diff.changes.map((c) => c.kind)).toContain("settings");
 	});
 
+	it("a changed business-rules signature ⇒ changed + observed-business-rules change (M6)", () => {
+		const snapshot = buildReviewerContextSnapshot({
+			...BASE,
+			businessRulesSignature: "sig-1",
+		});
+		const diff = diffReviewerContext({
+			snapshot,
+			current: { ...BASE, businessRulesSignature: "sig-2" },
+		});
+		expect(diff.changed).toBe(true);
+		expect(diff.changes.map((c) => c.kind)).toContain(
+			"observed-business-rules",
+		);
+	});
+
+	it("an absent business-rules signature is treated as empty (not a change)", () => {
+		const snapshot = buildReviewerContextSnapshot(BASE);
+		const diff = diffReviewerContext({
+			snapshot,
+			current: { ...BASE, businessRulesSignature: "" },
+		});
+		expect(diff.changed).toBe(false);
+		expect(diff.changes).toHaveLength(0);
+	});
+
 	it("reordering grounding layers alone is NOT a change", () => {
 		const snapshot = buildReviewerContextSnapshot(BASE);
 		const reordered = [...BASE.groundingLayers].reverse();

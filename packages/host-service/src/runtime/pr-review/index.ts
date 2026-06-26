@@ -6,6 +6,8 @@ export {
 export {
 	type BuildGuideSkeletonInput,
 	buildGuideSkeleton,
+	type GuideBusinessRule,
+	type GuideBusinessRulesPort,
 	type GuideGroundingServices,
 	type GuideIndexPort,
 	type GuidePlaybook,
@@ -13,6 +15,21 @@ export {
 	type GuidePracticePort,
 	type GuideRetrievePort,
 } from "./build-guide-skeleton.ts";
+export {
+	acceptObservedRule,
+	computeBusinessRulesSignature,
+	getAcceptedObservedRules,
+	listObservedRules,
+	proposeObservedRules,
+	revertObservedRule,
+	summarizeObservedRules,
+} from "./business-rules-store.ts";
+export type {
+	ObservedRule,
+	ObservedRuleDraft,
+	ObservedRuleState,
+	ObservedRulesSummary,
+} from "./business-rules-types.ts";
 export {
 	buildEnrichmentPrompt,
 	type EnrichGuideInput,
@@ -59,6 +76,14 @@ export type {
 	PrDiffInput,
 	PrReviewGuide,
 } from "./guide-types.ts";
+export {
+	acceptedRuleTexts,
+	buildBusinessRulesPrompt,
+	buildObservedRuleDrafts,
+	inferBusinessRules,
+	parseBusinessRulesReply,
+	type RawObservedRule,
+} from "./infer-business-rules.ts";
 export {
 	anchorLine,
 	type BuildLocalAiFindingsInput,

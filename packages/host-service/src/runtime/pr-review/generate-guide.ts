@@ -18,6 +18,7 @@ import {
 	buildGuideSkeleton,
 	type GuideGroundingServices,
 } from "./build-guide-skeleton.ts";
+import { getAcceptedObservedRules } from "./business-rules-store.ts";
 import type { GuideEnrichmentSession } from "./enrich-guide.ts";
 import { enrichGuide } from "./enrich-guide.ts";
 import { getCurrentGuide, putGuide } from "./guide-cache.ts";
@@ -161,6 +162,14 @@ export function buildGroundingServices(deps: {
 					provenance: parseProvenance(row.provenanceJson),
 				}));
 			},
+		},
+		// Wave-6 M6: surface the project's ACCEPTED observed business rules so later
+		// reviews ground on them (the compounding differentiator).
+		businessRules: {
+			listAccepted: (projectId) =>
+				getAcceptedObservedRules({ db, projectId }).map((rule) => ({
+					rule: rule.rule,
+				})),
 		},
 	};
 }

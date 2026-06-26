@@ -1,4 +1,6 @@
+import { eq } from "drizzle-orm";
 import type { HostDb } from "../../db/index.ts";
+import { memoryPlaybooks } from "../../db/schema.ts";
 import type {
 	FetchPrDiffDeps,
 	PrDiffResult as RawPrDiffResult,
@@ -12,10 +14,13 @@ import {
 	buildGuideSkeleton,
 	type GuideGroundingServices,
 } from "./build-guide-skeleton.ts";
+import { proposeObservedRules } from "./business-rules-store.ts";
+import type { ObservedRuleDraft } from "./business-rules-types.ts";
 import type { GuideEnrichmentSession } from "./enrich-guide.ts";
 import { getCurrentFindings, putFindings } from "./findings-cache.ts";
 import type { Finding, FindingsReport } from "./findings-types.ts";
 import { toGuideDiffInput } from "./generate-guide.ts";
+import { inferBusinessRules } from "./infer-business-rules.ts";
 import { buildLocalAiFindings, parseFindingsReply } from "./parse-findings.ts";
 
 /**
@@ -49,6 +54,27 @@ export interface FindingsCacheSink {
 	}): void;
 }
 
+/** The observed-business-rules write port (narrowed `proposeObservedRules`). */
+export interface ObservedRulesSink {
+	propose(input: {
+		projectId: string;
+		drafts: readonly ObservedRuleDraft[];
+		sourcePrNumber: number;
+	}): void;
+}
+
+/**
+ * The observed-business-rules inference inputs (Wave 6, M6). When supplied AND a
+ * local session is connected, `reviewPr` infers candidate rules and persists them
+ * as `proposed` (never auto-accepted). Omit to skip inference (e.g. a pure unit
+ * test that only checks findings).
+ */
+export interface ReviewRulesInference {
+	sink: ObservedRulesSink;
+	/** Prior playbook gotchas, to ground the inference prompt. */
+	gotchas: readonly string[];
+}
+
 export interface ReviewPrCoreInput {
 	projectId: string;
 	prNumber: number;
@@ -58,6 +84,8 @@ export interface ReviewPrCoreInput {
 	session: GuideEnrichmentSession | null;
 	/** Persist sink; omit to skip persistence (e.g. in a pure unit test). */
 	cache?: FindingsCacheSink;
+	/** Observed-business-rules inference (Wave 6, M6); omit to skip. */
+	rules?: ReviewRulesInference;
 	signal?: AbortSignal;
 }
 
@@ -91,12 +119,14 @@ async function runLocalAiFindings(input: {
 	raw: RawPrDiffResult;
 	diff: ReturnType<typeof toGuideDiffInput>;
 	session: GuideEnrichmentSession;
+	/** Accepted observed business rules (redacted) grounding the review (M6). */
+	businessRules: readonly string[];
 	signal?: AbortSignal;
 }): Promise<Finding[]> {
-	const { raw, diff, session, signal } = input;
+	const { raw, diff, session, businessRules, signal } = input;
 	try {
 		if (!(await session.isAvailable())) return [];
-		const prompt = buildFindingsPrompt({ diff });
+		const prompt = buildFindingsPrompt({ diff, businessRules });
 		const reply = await session.complete({ prompt, signal });
 		if (!reply) return [];
 		const parsed = parseFindingsReply(reply);
@@ -122,11 +152,25 @@ async function runLocalAiFindings(input: {
 export async function reviewPrCore(
 	input: ReviewPrCoreInput,
 ): Promise<FindingsReport> {
-	const { projectId, prNumber, diffSource, grounding, session, cache, signal } =
-		input;
+	const {
+		projectId,
+		prNumber,
+		diffSource,
+		grounding,
+		session,
+		cache,
+		rules,
+		signal,
+	} = input;
 
 	const raw = await diffSource.fetch({ projectId, prNumber });
 	const diff = toGuideDiffInput(raw);
+
+	// The project's ACCEPTED observed business rules (M6) — grounds the findings
+	// prompt (review the change against them) AND dedupes the rules inference.
+	const acceptedRules =
+		grounding.businessRules?.listAccepted(projectId).map((rule) => rule.rule) ??
+		[];
 
 	// Deterministic baseline — always available (reuses the skeleton's risk
 	// heuristics). Grounding may add nothing for an unindexed repo; that's fine.
@@ -138,7 +182,13 @@ export async function reviewPrCore(
 	const baseline = deriveBaselineFindings({ guide: skeleton });
 
 	const localAi = session
-		? await runLocalAiFindings({ raw, diff, session, signal })
+		? await runLocalAiFindings({
+				raw,
+				diff,
+				session,
+				businessRules: acceptedRules,
+				signal,
+			})
 		: [];
 
 	const findings: Finding[] = [...baseline, ...localAi];
@@ -154,6 +204,28 @@ export async function reviewPrCore(
 	// yields headSha ""); a missing SHA means the diff couldn't resolve.
 	if (cache && report.headSha.length > 0) {
 		cache.put({ projectId, prNumber, headSha: report.headSha, report });
+	}
+
+	// Wave-6 M6: best-effort observed-business-rules inference (local-AI only).
+	// Runs ONLY inside this explicit review, persists rules as `proposed` (never
+	// auto-accepted), and never throws out of the review path. Skipped without a
+	// session, without a sink, or when the diff couldn't resolve (empty head SHA).
+	if (session && rules && report.headSha.length > 0) {
+		const practiceText =
+			grounding.practice.getPractice({ scope: "project", projectId }).latest
+				?.content ?? null;
+		const drafts = await inferBusinessRules({
+			diff,
+			session,
+			practiceText,
+			gotchas: rules.gotchas,
+			accepted: acceptedRules,
+			sourcePrNumber: diff.prNumber,
+			signal,
+		});
+		if (drafts.length > 0) {
+			rules.sink.propose({ projectId, drafts, sourcePrNumber: diff.prNumber });
+		}
 	}
 
 	return report;
@@ -174,9 +246,26 @@ export interface ReviewPrInput {
 	signal?: AbortSignal;
 }
 
+/** Gather prior playbook gotchas for the project (grounds rules inference). */
+function gatherGotchas(db: HostDb, projectId: string): string[] {
+	const rows = db
+		.select({ gotcha: memoryPlaybooks.gotcha })
+		.from(memoryPlaybooks)
+		.where(eq(memoryPlaybooks.projectId, projectId))
+		.all();
+	const gotchas: string[] = [];
+	for (const row of rows) {
+		const gotcha = row.gotcha?.trim();
+		if (gotcha) gotchas.push(gotcha);
+	}
+	return gotchas;
+}
+
 /**
  * Host-facing `reviewPr`: wires M1's `fetchPrDiff` and the findings cache into
- * {@link reviewPrCore}. The `prReview.reviewPr` MUTATION calls this.
+ * {@link reviewPrCore}, plus the Wave-6 M6 observed-business-rules inference
+ * (proposes inferred rules — never auto-accepts). The `prReview.reviewPr`
+ * MUTATION calls this.
  */
 export async function reviewPr(input: ReviewPrInput): Promise<FindingsReport> {
 	const { db, fetchDeps, grounding, session, projectId, prNumber, signal } =
@@ -195,6 +284,18 @@ export async function reviewPr(input: ReviewPrInput): Promise<FindingsReport> {
 		cache: {
 			put: ({ projectId: pid, prNumber: pr, headSha, report }) =>
 				putFindings({ db, projectId: pid, prNumber: pr, headSha, report }),
+		},
+		rules: {
+			gotchas: gatherGotchas(db, projectId),
+			sink: {
+				propose: ({ projectId: pid, drafts, sourcePrNumber }) =>
+					proposeObservedRules({
+						db,
+						projectId: pid,
+						drafts,
+						sourcePrNumber,
+					}),
+			},
 		},
 	});
 }

@@ -29,6 +29,7 @@ export const DEFAULT_REVIEWER_GROUNDING_LAYERS = [
 	"practice-global",
 	"project-index",
 	"playbooks",
+	"observed-business-rules",
 ] as const;
 
 export type ReviewerGroundingLayer =
@@ -49,6 +50,13 @@ export interface ReviewerContextInputs {
 	indexCommitSha: string | null;
 	indexLastIndexedAt: number | null;
 	indexEntryCount: number;
+	/**
+	 * Wave-6 M6: FNV-1a signature of the project's ACCEPTED observed business
+	 * rules (ids + versions). Optional so existing fixtures/snapshots without it
+	 * compile (treated as "" — an empty accepted set). Accepting/reverting a rule
+	 * moves this, so the refresh detects an observed-business-rules change.
+	 */
+	businessRulesSignature?: string;
 }
 
 /** A persisted snapshot = the inputs plus their derived FNV-1a fingerprints. */
@@ -94,6 +102,7 @@ export function computeContextHash(inputs: ReviewerContextInputs): string {
 		indexCommitSha: inputs.indexCommitSha,
 		indexLastIndexedAt: inputs.indexLastIndexedAt,
 		indexEntryCount: inputs.indexEntryCount,
+		businessRulesSignature: inputs.businessRulesSignature ?? "",
 	};
 	return contentHash(JSON.stringify(canonical));
 }
@@ -116,6 +125,7 @@ export type ReviewerContextChangeKind =
 	| "practice-project"
 	| "practice-global"
 	| "project-index"
+	| "observed-business-rules"
 	| "settings";
 
 export interface ReviewerContextChange {
@@ -191,6 +201,16 @@ export function diffReviewerContext(input: {
 		changes.push({
 			kind: "project-index",
 			detail: `Project index updated (${current.indexEntryCount} entries)`,
+		});
+	}
+
+	if (
+		(snapshot.businessRulesSignature ?? "") !==
+		(current.businessRulesSignature ?? "")
+	) {
+		changes.push({
+			kind: "observed-business-rules",
+			detail: "Observed business rules changed",
 		});
 	}
 

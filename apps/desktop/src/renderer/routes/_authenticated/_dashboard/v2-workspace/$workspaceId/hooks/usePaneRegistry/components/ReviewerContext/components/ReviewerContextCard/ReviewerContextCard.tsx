@@ -5,6 +5,7 @@ import { LuRefreshCw, LuShieldCheck } from "react-icons/lu";
 import { useReviewerContextActions } from "../../hooks/useReviewerContext";
 import type { ReviewerContextStatus } from "../../types";
 import { summarizeReviewerContext } from "../../utils/summarizeReviewerContext";
+import { BusinessRulesSection } from "../BusinessRulesSection";
 
 interface ReviewerContextCardProps {
 	/** The project this card manages. */
@@ -100,6 +101,12 @@ export function ReviewerContextCard({
 					</Button>
 				)}
 			</div>
+
+			{/* Wave-6 M6: the compounding grounding the reviewer wrote — accepted
+			    rules + pending proposals, curated here. Shown once configured. */}
+			{status.configured ? (
+				<BusinessRulesSection projectId={projectId} />
+			) : null}
 		</div>
 	);
 }

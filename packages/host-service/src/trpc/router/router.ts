@@ -2,6 +2,7 @@ import { router } from "../index";
 import { agentsRouter } from "./agents";
 import { attachmentsRouter } from "./attachments";
 import { authRouter } from "./auth";
+import { businessRulesRouter } from "./business-rules";
 import { chatRouter } from "./chat";
 import { cloudRouter } from "./cloud";
 import { configRouter } from "./config";
@@ -33,6 +34,7 @@ export const appRouter = router({
 	agents: agentsRouter,
 	attachments: attachmentsRouter,
 	auth: authRouter,
+	businessRules: businessRulesRouter,
 	health: healthRouter,
 	host: hostRouter,
 	chat: chatRouter,

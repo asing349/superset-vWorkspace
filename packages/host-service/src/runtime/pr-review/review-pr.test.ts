@@ -1,10 +1,12 @@
 import { describe, expect, it } from "bun:test";
 import type { RetrievalBundle } from "@superset/memory";
 import type { GuideGroundingServices } from "./build-guide-skeleton.ts";
+import type { ObservedRuleDraft } from "./business-rules-types.ts";
 import type { GuideEnrichmentSession } from "./enrich-guide.ts";
 import type { FindingsReport } from "./findings-types.ts";
 import {
 	type FindingsCacheSink,
+	type ObservedRulesSink,
 	type ReviewDiffSource,
 	reviewPrCore,
 } from "./review-pr.ts";
@@ -200,5 +202,99 @@ describe("reviewPrCore", () => {
 			cache,
 		});
 		expect(putCalls).toBe(0);
+	});
+});
+
+describe("reviewPrCore — observed business rules (M6)", () => {
+	/** Grounding whose accepted business rules are the supplied texts. */
+	function groundingWithRules(accepted: string[]): GuideGroundingServices {
+		return {
+			...ungroundedServices(),
+			businessRules: { listAccepted: () => accepted.map((rule) => ({ rule })) },
+		};
+	}
+
+	it("grounds the findings prompt on accepted rules AND proposes inferred rules", async () => {
+		let findingsPrompt: string | null = null;
+		const session: GuideEnrichmentSession = {
+			isAvailable: () => true,
+			complete: async ({ prompt }) => {
+				// Two passes share `complete`: the findings pass, then the rules pass.
+				if (prompt.includes("DOMAIN BUSINESS")) {
+					return JSON.stringify({
+						rules: [{ rule: "New: refunds within 14 days", confidence: 70 }],
+					});
+				}
+				findingsPrompt = prompt;
+				return JSON.stringify({ findings: [] });
+			},
+		};
+
+		const proposed: ObservedRuleDraft[] = [];
+		const sink: ObservedRulesSink = {
+			propose: ({ drafts }) => proposed.push(...drafts),
+		};
+
+		await reviewPrCore({
+			projectId: "proj-rules",
+			prNumber: 21,
+			diffSource: diffSourceWith("sha-21"),
+			grounding: groundingWithRules(["Order total must never be negative"]),
+			session,
+			rules: { sink, gotchas: ["totals can underflow"] },
+		});
+
+		// The accepted rule grounded the findings prompt (the compounding loop).
+		expect(findingsPrompt).not.toBeNull();
+		expect(findingsPrompt as unknown as string).toContain(
+			"Order total must never be negative",
+		);
+		// The inferred rule was proposed (redacted, never auto-accepted).
+		expect(proposed).toHaveLength(1);
+		expect(proposed[0]?.rule).toBe("New: refunds within 14 days");
+	});
+
+	it("does NOT propose when no session is connected (baseline only)", async () => {
+		let proposeCalls = 0;
+		const sink: ObservedRulesSink = {
+			propose: () => {
+				proposeCalls += 1;
+			},
+		};
+		await reviewPrCore({
+			projectId: "proj-rules",
+			prNumber: 22,
+			diffSource: diffSourceWith("sha-22"),
+			grounding: groundingWithRules([]),
+			session: null,
+			rules: { sink, gotchas: [] },
+		});
+		expect(proposeCalls).toBe(0);
+	});
+
+	it("does NOT propose a rule the project has already accepted (dedupe)", async () => {
+		const session: GuideEnrichmentSession = {
+			isAvailable: () => true,
+			complete: async ({ prompt }) =>
+				prompt.includes("DOMAIN BUSINESS")
+					? JSON.stringify({
+							rules: [{ rule: "Order total must never be negative" }],
+						})
+					: JSON.stringify({ findings: [] }),
+		};
+		const proposed: ObservedRuleDraft[] = [];
+		const sink: ObservedRulesSink = {
+			propose: ({ drafts }) => proposed.push(...drafts),
+		};
+		await reviewPrCore({
+			projectId: "proj-rules",
+			prNumber: 23,
+			diffSource: diffSourceWith("sha-23"),
+			grounding: groundingWithRules(["Order total must never be negative"]),
+			session,
+			rules: { sink, gotchas: [] },
+		});
+		// The only inferred rule restates an accepted one → nothing proposed.
+		expect(proposed).toHaveLength(0);
 	});
 });

@@ -97,6 +97,7 @@ export type GuideSectionId =
 	| "read-first"
 	| "risk-flags"
 	| "project-conventions"
+	| "observed-business-rules"
 	| "prior-playbooks"
 	| "where-x-lives"
 	| "checks-and-threads";
