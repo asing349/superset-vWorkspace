@@ -48,6 +48,12 @@ import { execWithShellEnv } from "../workspaces/utils/shell-env";
 import { getDefaultProjectColor } from "./utils/colors";
 import { discoverAndSaveProjectIcon } from "./utils/favicon-discovery";
 import { fetchGitHubOwner, getGitHubAvatarUrl } from "./utils/github";
+import {
+	mergePullRequestsByNumber,
+	PR_LIST_FILTERS,
+	type PrListItem,
+	searchQueriesForFilter,
+} from "./utils/pr-filters";
 
 type Project = SelectProject;
 
@@ -82,7 +88,7 @@ function isRawPullRequest(item: unknown): item is {
 	);
 }
 
-function parsePullRequests(raw: unknown) {
+function parsePullRequests(raw: unknown): PrListItem[] {
 	if (!Array.isArray(raw)) return [];
 
 	return raw.filter(isRawPullRequest).map((pr) => ({
@@ -95,6 +101,41 @@ function parsePullRequests(raw: unknown) {
 				? "open"
 				: pr.state.toLowerCase(),
 	}));
+}
+
+/**
+ * Single source of truth for the `gh pr list` invocation behind both the plain
+ * list and the M2 filtered views. `search` adds a GitHub search qualifier (e.g.
+ * `author:@me`); omit it to list every PR.
+ */
+async function runGhPrList({
+	repoPath,
+	includeClosed,
+	search,
+	limit,
+}: {
+	repoPath: string;
+	includeClosed: boolean;
+	search?: string;
+	limit: number;
+}): Promise<PrListItem[]> {
+	const { stdout } = await execWithShellEnv(
+		"gh",
+		[
+			"pr",
+			"list",
+			"--state",
+			includeClosed ? "all" : "open",
+			...(search ? ["--search", search] : []),
+			"--limit",
+			String(limit),
+			"--json",
+			"number,title,url,state,isDraft",
+		],
+		{ cwd: repoPath, timeout: 10_000 },
+	);
+	const raw: unknown = JSON.parse(stdout.trim() || "[]");
+	return parsePullRequests(raw);
 }
 
 type FolderOutcome =
@@ -414,6 +455,57 @@ export const createProjectsRouter = (getWindow: () => BrowserWindow | null) => {
 					return parsePullRequests(raw);
 				} catch (err) {
 					console.warn("[searchPullRequests] Failed to search PRs:", err);
+					return [];
+				}
+			}),
+
+		// Wave 6, M2: the PR picker's filter chips. `all` lists every PR;
+		// `created`/`review-requested` route through GitHub search qualifiers
+		// (`@me` resolved server-side to the gh-authenticated account). The
+		// `review-requested` view is the UNION of review-requested/assignee/
+		// mentions, so its qualifiers run as separate searches and are merged
+		// here (GitHub AND-combines qualifiers within one query). Read-only.
+		listFilteredPullRequests: publicProcedure
+			.input(
+				z.object({
+					projectId: z.string(),
+					filter: z.enum(PR_LIST_FILTERS).default("all"),
+					includeClosed: z.boolean().optional(),
+				}),
+			)
+			.query(async ({ input }): Promise<PrListItem[]> => {
+				const project = localDb
+					.select()
+					.from(projects)
+					.where(eq(projects.id, input.projectId))
+					.get();
+				if (!project) return [];
+
+				const includeClosed = input.includeClosed ?? false;
+				const queries = searchQueriesForFilter(input.filter);
+
+				try {
+					if (queries.length === 0) {
+						return await runGhPrList({
+							repoPath: project.mainRepoPath,
+							includeClosed,
+							limit: 30,
+						});
+					}
+
+					const groups = await Promise.all(
+						queries.map((search) =>
+							runGhPrList({
+								repoPath: project.mainRepoPath,
+								includeClosed,
+								search,
+								limit: 100,
+							}),
+						),
+					);
+					return mergePullRequestsByNumber(groups);
+				} catch (err) {
+					console.warn("[listFilteredPullRequests] Failed to list PRs:", err);
 					return [];
 				}
 			}),
