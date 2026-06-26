@@ -52,7 +52,7 @@ None blocking — decisions are in the Decision Log per the user's direction. De
 
 ## Progress
 
-- [ ] M1 — Review engine + Findings tab: `prReview.reviewPr` (button-only mutation) → deterministic baseline + local-AI findings (severity + category + line anchors + anti-hallucination guard), host-SQLite findings cache + head-SHA staleness; Findings section in the pane (anchors → Diff).
+- [x] M1 — Review engine + Findings tab (2026-06-26T05:21Z): `prReview.reviewPr` (button-only mutation) → deterministic baseline + local-AI findings (severity + category + line anchors + anti-hallucination guard), host-SQLite findings cache + head-SHA staleness; Findings section in the pane (anchors → Diff). Shipped: `pr_review_findings` table + migration `0012_pr_review_findings.sql`; host engine `runtime/pr-review/{findings-types,parse-findings,build-findings,findings-cache,review-pr}.ts`; router `prReview.reviewPr` mutation + `getCachedFindings` query; `markFindingsStaleOnHeadChange` wired into `app.ts` head-change hook; renderer Findings tab (`FindingsTab` + `FindingsSectionView` reusing `GuideItemLine`, `useReviewPr` hook, `sections` registry now `diff|findings|guide`). Tests: parser/validator (valid parse, off-diff anti-hallucination drop, redaction), `@@` line-anchor computation, baseline derivation, staleness flip — host suite 940 pass / 0 fail; renderer PrReviewPane 21 pass. Gates: typecheck ✓, lint ✓ (exit 0), renderer Node-import guard ✓, `bun test packages/host-service` ✓.
 - [ ] M2 — PR filters: all repo PRs / created (`author:@me`) / tagged·review-requested (`review-requested:@me`/`mentions:@me`/`assignee:@me`) via `searchPullRequests` + viewer `@me`.
 - [ ] M3 — Opt-in commenting: a host `github` write mutation (`createReview`/`createReviewComment`/`issues.createComment`) + per-finding "Post comment" (explicit click); findings flip to `posted`.
 - [ ] M4 — Manual merge + threads: a confirm-gated "Merge PR" button (reuse `github.mergePR`); show/resolve existing review threads (parameterized by `(owner,name,prNumber)`).
@@ -69,6 +69,14 @@ Timestamp each item when checked off; split partials into done/remaining.
 
 - Observation: "business logic" has no store today — the project index is structural ("where X lives"), not behavioral.
   Evidence: `packages/memory/src/structural-map` summarizes exported symbols; `distillDiffShape` is paths+churn only. So observed business rules are net-new (M6).
+
+- Observation (M1): the deterministic baseline is most cleanly built by REUSING the wave-5 skeleton's `risk-flags` section rather than re-deriving the heuristics — those path predicates (`isMigrationPath`/`isAuthPath`/`removesExport`/…) are module-private in `build-guide-skeleton.ts`. `deriveBaselineFindings({ guide })` projects each risk flag onto a `Finding`, classifying `category` from the flag's stable phrasing (`classifyRiskFlag`, locked by a test). Baseline findings are file-level (no line); line anchors come from the local-AI pass only.
+
+- Observation (M1): line anchoring is purely from the `@@` hunk headers' NEW-side ranges (`+start,count` → `start..start+count-1`); a model-supplied `line` is KEPT only if it falls in a range, else dropped to a file-only anchor (never fabricated). The anti-hallucination guard drops a whole finding only when its `file` ∉ the diff's changed-file set (which includes rename `previousFilename`).
+
+- Surprise (M1, gate): the standing gate `bun run lint:check-node-imports` is NOT a root npm script — the renderer Node-import ban is enforced by a Biome `noRestrictedImports` override on `apps/desktop/src/renderer/**` (`node:*` + `@superset/workspace-fs/{host,server}`), which runs inside `bun run lint` (exit 0). Verified the new renderer files import no `node:*`.
+
+- Surprise (M1, gate): full-repo `bun test` aborts with a Bun C++ panic triggered by `packages/pty-daemon/test/control-plane.test.ts` (TCP framing / detached process-group kills) — it fails 19/32 in isolation too, independent of any M1 change (an OS/sandbox flake). `bun test packages/host-service` (940 pass / 0 fail) and the renderer PrReviewPane suite (21 pass) are green.
 
 (Add observations as work proceeds.)
 
@@ -98,6 +106,14 @@ Timestamp each item when checked off; split partials into done/remaining.
 - Decision: Filters reuse GitHub search qualifiers; "created" is trivial, "tagged/review-requested" must go through GitHub search (the cloud table lacks reviewer/mention columns).
   Rationale: Investigation found the cloud `githubPullRequests` table cannot serve reviewer/mention filters.
   Date/Author: 2026-06-26, planning session.
+
+- Decision (M1): the findings artifact is a `FindingsReport` (`{ findings: Finding[], prNumber, headSha, enriched, baselineOnly }`) stored as ONE JSON blob in `pr_review_findings.findings_json` (mirroring the guide-cache blob), with per-finding `state` (`open|posted|dismissed`) INSIDE the JSON so M3's comment-post flips one finding without a schema change. `getCachedFindings` returns `{ report, stale } | null` — uses `report` (not `guide`) to avoid a `findings.findings` collision; otherwise identical to the wave-5 `getCachedGuide` shape.
+  Rationale: Match the wave-5 guide-cache style exactly (least surprise, reuses the staleness pattern), keep the per-finding state mutable cheaply for M3.
+  Date/Author: 2026-06-26T05:21Z, M1 implementation.
+
+- Decision (M1): the Findings section reuses the guide renderer by exporting `GuideItemLine` from `GuideSectionView` and composing it inside a new `FindingsSectionView` (grouped by severity, with a category badge per finding), rather than feeding a synthetic guide into `GuideSectionView` (whose section `id` is the closed `GuideSectionId` union). Same `onOpenAnchor` → `resolveScrollTarget` flow; anchors now carry a NEW-side `line`, so clicking a finding scrolls the Diff tab to the file/line.
+  Rationale: `Finding` carries `category` (which `GuideItem` lacks) and findings group by severity, not by guide section; exporting the leaf line component is the minimal true reuse.
+  Date/Author: 2026-06-26T05:21Z, M1 implementation.
 
 
 ## Context and Orientation

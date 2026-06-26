@@ -7,8 +7,12 @@ import {
 } from "./sections";
 
 describe("PR review sections", () => {
-	it("exposes exactly the Diff and Guide tabs in order", () => {
-		expect(PR_REVIEW_SECTIONS.map((s) => s.id)).toEqual(["diff", "guide"]);
+	it("exposes the Diff, Findings and Guide tabs in order", () => {
+		expect(PR_REVIEW_SECTIONS.map((s) => s.id)).toEqual([
+			"diff",
+			"findings",
+			"guide",
+		]);
 	});
 
 	it("defaults to the diff tab", () => {
@@ -17,6 +21,7 @@ describe("PR review sections", () => {
 
 	it("recognizes valid section ids", () => {
 		expect(isPrReviewSection("diff")).toBe(true);
+		expect(isPrReviewSection("findings")).toBe(true);
 		expect(isPrReviewSection("guide")).toBe(true);
 		expect(isPrReviewSection("settings")).toBe(false);
 		expect(isPrReviewSection("")).toBe(false);
@@ -24,6 +29,7 @@ describe("PR review sections", () => {
 
 	it("resolves a valid section to itself", () => {
 		expect(resolvePrReviewSection("guide")).toBe("guide");
+		expect(resolvePrReviewSection("findings")).toBe("findings");
 		expect(resolvePrReviewSection("diff")).toBe("diff");
 	});
 

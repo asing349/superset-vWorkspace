@@ -1,1 +1,1 @@
-export { GuideSectionView } from "./GuideSectionView";
+export { GuideItemLine, GuideSectionView } from "./GuideSectionView";

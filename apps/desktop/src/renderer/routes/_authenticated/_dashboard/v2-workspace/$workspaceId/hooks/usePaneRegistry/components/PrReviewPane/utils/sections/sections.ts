@@ -1,13 +1,14 @@
 /**
- * The PR-review window's two tabs (segmented control). Data-driven, mirroring
- * the Memory panel's `MEMORY_SECTIONS` precedent so the header stays a thin
- * renderer over this list:
- *   - "diff"  — the PR's code changes (M2, fed by `prReview.getDiff`).
- *   - "guide" — the memory-grounded review guide (empty state in M2; M4 wires
- *     the generator, M5 the anchors).
+ * The PR-review window's tabs (segmented control). Data-driven, mirroring the
+ * Memory panel's `MEMORY_SECTIONS` precedent so the header stays a thin renderer
+ * over this list:
+ *   - "diff"     — the PR's code changes (wave 5, fed by `prReview.getDiff`).
+ *   - "findings" — the wave-6 grounded review findings (empty state until the
+ *     button-only `prReview.reviewPr` runs; anchors jump back to the Diff tab).
+ *   - "guide"    — the memory-grounded review guide (wave 5).
  */
 
-export type PrReviewSection = "diff" | "guide";
+export type PrReviewSection = "diff" | "findings" | "guide";
 
 export interface PrReviewSectionDef {
 	id: PrReviewSection;
@@ -16,6 +17,7 @@ export interface PrReviewSectionDef {
 
 export const PR_REVIEW_SECTIONS: readonly PrReviewSectionDef[] = [
 	{ id: "diff", label: "Diff" },
+	{ id: "findings", label: "Findings" },
 	{ id: "guide", label: "Guide" },
 ];
 

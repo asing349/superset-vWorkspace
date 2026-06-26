@@ -52,7 +52,14 @@ export function GuideSectionView({
 	);
 }
 
-function GuideItemLine({
+/**
+ * Renders one guide/finding claim line: a clickable anchored button (jumps to
+ * the Diff tab via `onOpenAnchor`), an external link (`href`), or plain text —
+ * with the severity colour applied. Exported so the wave-6 Findings view reuses
+ * the EXACT anchored-item rendering + `onOpenAnchor` → `resolveScrollTarget`
+ * flow rather than re-implementing it.
+ */
+export function GuideItemLine({
 	item,
 	onOpenAnchor,
 }: {

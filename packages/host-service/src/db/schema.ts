@@ -534,3 +534,49 @@ export const prReviewDiffs = sqliteTable(
 		),
 	],
 );
+
+/**
+ * PR-review grounded Findings cache (Wave 6, M1). One row per reviewed PR,
+ * keyed `(projectId, prNumber, headSha)`. `findingsJson` is
+ * `JSON.stringify(FindingsReport)` — the structured findings the
+ * `prReview.reviewPr` button-only mutation produces (deterministic baseline +
+ * best-effort local-AI findings, each with severity + category + a `{file,line?,
+ * symbol?}` anchor and a per-finding `state` of `open|posted|dismissed`). Per-
+ * finding `state` lives INSIDE the JSON payload (mirroring the guide-cache JSON
+ * blob style), so a comment post (M3) flips one finding's state without a schema
+ * change. `stale` is flipped to `true` by `markFindingsStaleOnHeadChange` when
+ * the PR's head SHA advances past the SHA the findings were built against,
+ * surfacing a "Re-review" affordance WITHOUT ever re-reviewing on its own (the
+ * wave-5/6 button-only guardrail). Local-only (host SQLite); cloud schema frozen.
+ */
+export const prReviewFindings = sqliteTable(
+	"pr_review_findings",
+	{
+		id: text().primaryKey(),
+		projectId: text("project_id")
+			.notNull()
+			.references(() => projects.id, { onDelete: "cascade" }),
+		prNumber: integer("pr_number").notNull(),
+		headSha: text("head_sha").notNull(),
+		// Serialized `FindingsReport` (JSON.stringify). Parsed back on read.
+		findingsJson: text("findings_json").notNull(),
+		stale: integer("stale", { mode: "boolean" }).notNull().default(false),
+		createdAt: integer("created_at")
+			.notNull()
+			.$defaultFn(() => Date.now()),
+		updatedAt: integer("updated_at")
+			.notNull()
+			.$defaultFn(() => Date.now()),
+	},
+	(table) => [
+		index("pr_review_findings_project_pr_idx").on(
+			table.projectId,
+			table.prNumber,
+		),
+		uniqueIndex("pr_review_findings_project_pr_head_unique").on(
+			table.projectId,
+			table.prNumber,
+			table.headSha,
+		),
+	],
+);

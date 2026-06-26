@@ -40,3 +40,21 @@ export type GuideItem = GuideSection["items"][number];
 
 /** A code anchor attached to a guide claim ({ file, line?, symbol? }). */
 export type GuideAnchor = NonNullable<GuideItem["anchor"]>;
+
+/**
+ * Findings artifact types for the Findings tab (Wave 6, M1) — DERIVED from the
+ * host router output, the single source of truth (same browser-safe,
+ * type-only seam as the guide types above).
+ */
+
+/** `{ report, stale } | null` — exactly what `getCachedFindings` returns. */
+export type CachedFindingsResult = PrReviewOutputs["getCachedFindings"];
+
+/** The computed Findings report — the `reviewPr` mutation's output. */
+export type FindingsReport = PrReviewOutputs["reviewPr"];
+
+/** One structured review finding ({ severity, category, anchor, rationale, … }). */
+export type Finding = FindingsReport["findings"][number];
+
+/** A finding's code anchor ({ file, line?, symbol? }) — shares the guide shape. */
+export type FindingAnchor = Finding["anchor"];

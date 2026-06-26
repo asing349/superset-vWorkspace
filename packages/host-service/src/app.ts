@@ -31,6 +31,7 @@ import {
 // M6: PR-review guide-cache staleness. Imported by PATH (not via
 // `./runtime/pr-review/index.ts`, which the guide generator owns) — app.ts is
 // the single place that knows about both the PR runtime and the guide cache.
+import { markFindingsStaleOnHeadChange } from "./runtime/pr-review/findings-cache";
 import { markGuideStaleOnHeadChange } from "./runtime/pr-review/guide-cache";
 import { PullRequestRuntimeManager } from "./runtime/pull-requests";
 import {
@@ -166,6 +167,10 @@ export function createApp(options: CreateAppOptions): CreateAppResult {
 		// (the hook itself swallows + warns on any throw).
 		onPullRequestHeadChanged: ({ projectId, prNumber, newHeadSha }) => {
 			markGuideStaleOnHeadChange({ db, projectId, prNumber, newHeadSha });
+			// Wave-6 M1: the same head-change flips any cached review Findings to
+			// `stale` so the UI offers a "Re-review" button — flag-only, never an
+			// automatic re-review (the button-only guardrail).
+			markFindingsStaleOnHeadChange({ db, projectId, prNumber, newHeadSha });
 		},
 	});
 	pullRequestRuntime.start();

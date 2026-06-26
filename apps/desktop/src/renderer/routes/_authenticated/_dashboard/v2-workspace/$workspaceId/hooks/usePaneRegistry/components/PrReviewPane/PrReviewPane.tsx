@@ -2,10 +2,12 @@ import type { RendererContext } from "@superset/panes";
 import { useCallback } from "react";
 import { electronTrpc } from "renderer/lib/electron-trpc";
 import type { PaneViewerData, PrReviewPaneData } from "../../../../types";
+import { FindingsTab } from "./components/FindingsTab";
 import { GuideTab } from "./components/GuideTab";
 import { PrDiffView } from "./components/PrDiffView";
 import { PrReviewHeader } from "./components/PrReviewHeader";
 import { useGenerateGuide } from "./hooks/useGenerateGuide";
+import { useReviewPr } from "./hooks/useReviewPr";
 import type { GuideAnchor } from "./types";
 import { type PrReviewSection, resolvePrReviewSection } from "./utils/sections";
 
@@ -41,14 +43,15 @@ export function PrReviewPane({ context, projectId }: PrReviewPaneProps) {
 		[data, updateData],
 	);
 
-	// M5 anchor click-through: a Guide claim → jump to the code. Switch to the
-	// Diff tab and stamp the scroll target (`focusFile`/`focusLine`), bumping
-	// `focusTick` so a repeat click of the same anchor re-scrolls (the wave-3 A3
-	// pattern). A symbol-only anchor still carries a host-resolved `file` ("where
-	// X lives"), so it routes the same way; `href` anchors (PR/playbook links) are
-	// opened inline by the link rendering and never reach here. The scroll keeps
-	// the user in the review window (the differentiator) rather than yanking focus
-	// to a separate editor pane.
+	// Anchor click-through: a Guide claim OR a wave-6 Finding → jump to the code.
+	// Switch to the Diff tab and stamp the scroll target (`focusFile`/`focusLine`),
+	// bumping `focusTick` so a repeat click of the same anchor re-scrolls (the
+	// wave-3 A3 pattern). Guide and Finding anchors share the same
+	// `{ file, line?, symbol? }` shape, so one handler serves both. A symbol-only
+	// anchor still carries a host-resolved `file`, so it routes the same way;
+	// `href` anchors (PR/playbook links) are opened inline and never reach here.
+	// The scroll keeps the user in the review window rather than yanking focus to
+	// a separate editor pane.
 	const handleOpenAnchor = useCallback(
 		(anchor: GuideAnchor) => {
 			if (!anchor.file) return;
@@ -73,6 +76,9 @@ export function PrReviewPane({ context, projectId }: PrReviewPaneProps) {
 	const prRow = (prListQuery.data ?? []).find((pr) => pr.prNumber === prNumber);
 
 	const guideState = useGenerateGuide({ projectId, prNumber });
+	// Cache-first read of any prior review (button-only mutation lives inside).
+	// Mounting/reading NEVER reviews — only the Findings tab's button does.
+	const reviewState = useReviewPr({ projectId, prNumber });
 
 	return (
 		<div className="flex h-full min-h-0 w-full flex-col bg-background">
@@ -91,6 +97,11 @@ export function PrReviewPane({ context, projectId }: PrReviewPaneProps) {
 						focusFile={data.focusFile}
 						focusLine={data.focusLine}
 						focusTick={data.focusTick}
+					/>
+				) : section === "findings" ? (
+					<FindingsTab
+						reviewState={reviewState}
+						onOpenAnchor={handleOpenAnchor}
 					/>
 				) : (
 					<GuideTab guideState={guideState} onOpenAnchor={handleOpenAnchor} />

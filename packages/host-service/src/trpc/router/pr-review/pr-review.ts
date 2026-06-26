@@ -1,9 +1,12 @@
 import { z } from "zod";
 import {
 	buildGroundingServices,
+	type FindingsReport,
 	generateGuide,
+	getCachedFindings,
 	getCachedGuide,
 	type PrReviewGuide,
+	reviewPr,
 } from "../../../runtime/pr-review/index";
 import { createLocalAiSession } from "../../../runtime/pr-review/local-ai-session";
 import { protectedProcedure, queryProcedure, router } from "../../index";
@@ -112,6 +115,78 @@ export const prReviewRouter = router({
 		.query(
 			({ ctx, input }): { guide: PrReviewGuide; stale: boolean } | null => {
 				return getCachedGuide({
+					db: ctx.db,
+					projectId: input.projectId,
+					prNumber: input.prNumber,
+				});
+			},
+		),
+
+	/**
+	 * Produce grounded review Findings for a PR (Wave 6, M1). Like
+	 * {@link generateGuide}, this MUTATION is THE ONLY trigger — making it a
+	 * mutation (not a query) is what structurally guarantees the button-only
+	 * guardrail: open / view / tab-switch / new-commit (all queries) can never
+	 * reach this path. A new head SHA only flips cached findings `stale` (the
+	 * `app.ts` head-change hook), surfacing a "Re-review" button.
+	 *
+	 * Pipeline (all host-local): fetch the PR diff (M1) → deterministic baseline
+	 * findings from the skeleton's risk heuristics (always returned) → IF a local
+	 * AI session is connected, best-effort local-AI findings via the user's OWN
+	 * on-device agent (validated, redacted, off-diff files rejected, lines anchored
+	 * to `@@` hunks) → persist to the host findings cache. NO new Superset cloud
+	 * model call; degrades to the baseline when no agent is connected.
+	 */
+	reviewPr: protectedProcedure
+		.input(
+			z.object({
+				projectId: z.string().min(1),
+				prNumber: z.number().int().positive(),
+			}),
+		)
+		.mutation(async ({ ctx, input }): Promise<FindingsReport> => {
+			const grounding = buildGroundingServices({
+				db: ctx.db,
+				memoryRetrieve: ctx.runtime.memoryRetrieve,
+				memoryIndex: ctx.runtime.memoryIndex,
+				readPracticeVersion: (practiceInput) =>
+					ctx.runtime.memoryRetrieve.readPracticeVersion(practiceInput),
+			});
+
+			// The user's own on-device agent, or null when none is connected.
+			const session = createLocalAiSession({
+				db: ctx.db,
+				chat: ctx.runtime.chat,
+				projectId: input.projectId,
+			});
+
+			return reviewPr({
+				db: ctx.db,
+				fetchDeps: { db: ctx.db, github: ctx.github, git: ctx.git },
+				grounding,
+				session,
+				projectId: input.projectId,
+				prNumber: input.prNumber,
+			});
+		}),
+
+	/**
+	 * Read the current cached Findings for a PR (Wave 6, M1). The renderer calls
+	 * this on open/view; it REVIEWS NOTHING — it only reads what a prior
+	 * `reviewPr` button press persisted. Returns `{ report, stale }`, or `null`
+	 * when no review has been run. `stale` is true once the PR's head SHA has
+	 * advanced past the reviewed SHA.
+	 */
+	getCachedFindings: queryProcedure
+		.input(
+			z.object({
+				projectId: z.string().min(1),
+				prNumber: z.number().int().positive(),
+			}),
+		)
+		.query(
+			({ ctx, input }): { report: FindingsReport; stale: boolean } | null => {
+				return getCachedFindings({
 					db: ctx.db,
 					projectId: input.projectId,
 					prNumber: input.prNumber,

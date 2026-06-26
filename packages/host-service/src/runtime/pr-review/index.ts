@@ -1,4 +1,9 @@
 export {
+	buildFindingsPrompt,
+	classifyRiskFlag,
+	deriveBaselineFindings,
+} from "./build-findings.ts";
+export {
 	type BuildGuideSkeletonInput,
 	buildGuideSkeleton,
 	type GuideGroundingServices,
@@ -16,6 +21,19 @@ export {
 	mergeEnrichment,
 	parseEnrichmentReply,
 } from "./enrich-guide.ts";
+export {
+	getCurrentFindings,
+	markFindingsStaleOnHeadChange,
+	putFindings,
+} from "./findings-cache.ts";
+export type {
+	Finding,
+	FindingAnchor,
+	FindingCategory,
+	FindingSeverity,
+	FindingState,
+	FindingsReport,
+} from "./findings-types.ts";
 export {
 	buildGroundingServices,
 	type GenerateGuideCoreInput,
@@ -40,3 +58,20 @@ export type {
 	PrDiffInput,
 	PrReviewGuide,
 } from "./guide-types.ts";
+export {
+	anchorLine,
+	type BuildLocalAiFindingsInput,
+	buildLocalAiFindings,
+	parseFindingsReply,
+	parseNewSideRanges,
+	type RawFinding,
+} from "./parse-findings.ts";
+export {
+	type FindingsCacheSink,
+	getCachedFindings,
+	type ReviewDiffSource,
+	type ReviewPrCoreInput,
+	type ReviewPrInput,
+	reviewPr,
+	reviewPrCore,
+} from "./review-pr.ts";
