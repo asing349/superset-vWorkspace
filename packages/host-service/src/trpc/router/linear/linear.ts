@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../../index";
+import { ticketsRouter } from "./tickets";
 
 // Wave-7 M1 — host-local Linear connection (`linear.auth.*`). Mirrors the
 // host-side Anthropic/OpenAI OAuth routers: every procedure proxies to the
@@ -39,4 +40,5 @@ const authRouter = router({
 
 export const linearRouter = router({
 	auth: authRouter,
+	tickets: ticketsRouter,
 });

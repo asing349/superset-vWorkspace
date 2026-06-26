@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { getHostServiceClientByUrl } from "renderer/lib/host-service-client";
 import { electronTrpcClient } from "renderer/lib/trpc-client";
 import { useLocalHostService } from "renderer/routes/_authenticated/providers/LocalHostServiceProvider";
+import { LinearLocalTickets } from "./components/LinearLocalTickets";
 
 // Wave-7 M1 — one-button "Connect Linear (this Mac)" + local status, shown
 // beside the cloud Linear connection. Cloud-precedence: while a cloud Linear
@@ -31,6 +32,9 @@ export function LinearLocalConnection({
 	const [isConnecting, setIsConnecting] = useState(false);
 	const [pollEnabled, setPollEnabled] = useState(false);
 	const [error, setError] = useState<string | null>(null);
+	const [ticketTeamId, setTicketTeamId] = useState<string | undefined>(
+		undefined,
+	);
 
 	const connectionQueryKey = [
 		"linear-local-connection",
@@ -158,68 +162,77 @@ export function LinearLocalConnection({
 			: "Not connected";
 
 	return (
-		<div className="flex items-center justify-between gap-8 py-2 pl-11 pr-0">
-			<div className="min-w-0">
-				<div className="text-sm font-medium">This Mac (local)</div>
-				<div className="flex items-center gap-1.5 mt-0.5">
-					<span
-						className={
-							isLocalConnected
-								? "size-2 rounded-full bg-green-500"
-								: "size-2 rounded-full bg-muted-foreground/30"
-						}
-					/>
-					<span className="text-xs text-muted-foreground">{statusLabel}</span>
+		<div>
+			<div className="flex items-center justify-between gap-8 py-2 pl-11 pr-0">
+				<div className="min-w-0">
+					<div className="text-sm font-medium">This Mac (local)</div>
+					<div className="flex items-center gap-1.5 mt-0.5">
+						<span
+							className={
+								isLocalConnected
+									? "size-2 rounded-full bg-green-500"
+									: "size-2 rounded-full bg-muted-foreground/30"
+							}
+						/>
+						<span className="text-xs text-muted-foreground">{statusLabel}</span>
+					</div>
+					{cloudConnected && !isLocalConnected && (
+						<div className="text-xs text-muted-foreground mt-1">
+							Disconnect cloud Linear to connect this Mac.
+						</div>
+					)}
+					{error && (
+						<div className="text-xs text-destructive mt-1 select-text cursor-text">
+							{error}
+						</div>
+					)}
 				</div>
-				{cloudConnected && !isLocalConnected && (
-					<div className="text-xs text-muted-foreground mt-1">
-						Disconnect cloud Linear to connect this Mac.
-					</div>
-				)}
-				{error && (
-					<div className="text-xs text-destructive mt-1 select-text cursor-text">
-						{error}
-					</div>
-				)}
+				<div className="flex items-center gap-2 shrink-0">
+					{isLocalConnected ? (
+						<Button
+							variant="outline"
+							size="sm"
+							disabled={busy}
+							onClick={() => disconnectMutation.mutate()}
+						>
+							Disconnect
+						</Button>
+					) : isConnecting ? (
+						<Button
+							variant="outline"
+							size="sm"
+							onClick={() => {
+								void cancelConnect();
+							}}
+						>
+							Cancel
+						</Button>
+					) : (
+						<Button
+							variant="outline"
+							size="sm"
+							disabled={cloudConnected || busy || !activeHostUrl}
+							title={
+								cloudConnected
+									? "Disconnect cloud Linear to connect this Mac"
+									: undefined
+							}
+							onClick={() => {
+								void startConnect();
+							}}
+						>
+							Connect Linear (this Mac)
+						</Button>
+					)}
+				</div>
 			</div>
-			<div className="flex items-center gap-2 shrink-0">
-				{isLocalConnected ? (
-					<Button
-						variant="outline"
-						size="sm"
-						disabled={busy}
-						onClick={() => disconnectMutation.mutate()}
-					>
-						Disconnect
-					</Button>
-				) : isConnecting ? (
-					<Button
-						variant="outline"
-						size="sm"
-						onClick={() => {
-							void cancelConnect();
-						}}
-					>
-						Cancel
-					</Button>
-				) : (
-					<Button
-						variant="outline"
-						size="sm"
-						disabled={cloudConnected || busy || !activeHostUrl}
-						title={
-							cloudConnected
-								? "Disconnect cloud Linear to connect this Mac"
-								: undefined
-						}
-						onClick={() => {
-							void startConnect();
-						}}
-					>
-						Connect Linear (this Mac)
-					</Button>
-				)}
-			</div>
+			{isLocalConnected && activeHostUrl && (
+				<LinearLocalTickets
+					hostUrl={activeHostUrl}
+					teamId={ticketTeamId}
+					onTeamChange={setTicketTeamId}
+				/>
+			)}
 		</div>
 	);
 }

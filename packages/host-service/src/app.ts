@@ -20,6 +20,11 @@ import {
 	LinearAuthService,
 	LinearLocalAuthStore,
 } from "./runtime/linear-auth";
+import {
+	createSdkLinearTicketClient,
+	LinearTicketsRuntime,
+	LinearTicketsStore,
+} from "./runtime/linear-tickets";
 import { runMainWorkspaceSweep } from "./runtime/main-workspace-sweep";
 import {
 	IndexRefreshWatcher,
@@ -247,8 +252,9 @@ export function createApp(options: CreateAppOptions): CreateAppResult {
 	const linearRedirectPort = linearRedirectPortRaw
 		? Number.parseInt(linearRedirectPortRaw, 10)
 		: undefined;
+	const linearAuthStore = new LinearLocalAuthStore({ db });
 	const linearAuth = new LinearAuthService({
-		store: new LinearLocalAuthStore({ db }),
+		store: linearAuthStore,
 		checkCloudConnected: () =>
 			isCloudLinearConnected({ api, organizationId: config.organizationId }),
 		clientId: process.env.LINEAR_DESKTOP_CLIENT_ID,
@@ -258,18 +264,36 @@ export function createApp(options: CreateAppOptions): CreateAppResult {
 				: undefined,
 	});
 
+	// Wave-7 M2: host-local Linear ticket poller. Polls the viewer's issues with
+	// the M1 token (a strict no-op when no local token is present), upserts them
+	// into the host-local `linear_tickets` cache, and streams via
+	// `linear.tickets.*`. `ensureFreshToken` runs M1's lazy PKCE refresh before
+	// each poll. NOTHING is written to the cloud DB.
+	const linearTickets = new LinearTicketsRuntime({
+		store: new LinearTicketsStore({ db }),
+		auth: linearAuthStore,
+		createClient: createSdkLinearTicketClient,
+		ensureFreshToken: async () => {
+			await linearAuth.refresh();
+		},
+	});
+
 	const runtime = {
 		auth: chatService,
 		chat: chatRuntime,
 		filesystem,
 		pullRequests: pullRequestRuntime,
 		linearAuth,
+		linearTickets,
 		memoryIndex,
 		memoryRetrieve,
 		memoryConsolidation,
 		memoryVault,
 		memoryEmbeddings,
 	};
+	// Wave-7 M2: begin interval polling of the local Linear tickets (immediate
+	// first poll is token-gated, so this is a no-op until a local token exists).
+	linearTickets.start();
 	const app = new Hono();
 	const { injectWebSocket, upgradeWebSocket } = createNodeWebSocket({ app });
 
@@ -385,6 +409,12 @@ export function createApp(options: CreateAppOptions): CreateAppResult {
 			linearAuth.cancelConnect();
 		} catch (err) {
 			console.warn("[host-service] linearAuth.cancelConnect failed:", err);
+		}
+		try {
+			// Stop the W7 M2 local Linear ticket poll interval.
+			linearTickets.stop();
+		} catch (err) {
+			console.warn("[host-service] linearTickets.stop failed:", err);
 		}
 		try {
 			eventBus.close();

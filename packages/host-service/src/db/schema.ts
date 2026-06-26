@@ -740,3 +740,45 @@ export const linearLocalAuth = sqliteTable("linear_local_auth", {
 		.notNull()
 		.$defaultFn(() => Date.now()),
 });
+
+// Wave-7 M2: host-local cache of the viewer's Linear issues, fetched by the
+// local poller using the M1 access token (assigned-to-me / created-by-me). This
+// is a pure cache keyed on the stable Linear issue UUID (`id`) — safe to delete
+// and re-poll; the poller upserts. NOTHING here is written to the cloud `tasks`
+// table (read-time composition is M3's job). All columns are NON-secret issue
+// metadata (no tokens). `issue_*_at` are epoch-ms timestamps from Linear;
+// `synced_at` is the host clock at last upsert.
+export const linearTickets = sqliteTable(
+	"linear_tickets",
+	{
+		// Stable Linear issue UUID — the upsert key.
+		id: text().primaryKey(),
+		// Human identifier, e.g. "ENG-123".
+		identifier: text().notNull(),
+		title: text().notNull(),
+		description: text(),
+		url: text().notNull(),
+		// Linear numeric priority (0 none, 1 urgent … 4 low).
+		priority: integer().notNull().default(0),
+		stateId: text("state_id"),
+		stateName: text("state_name"),
+		stateType: text("state_type"),
+		assigneeId: text("assignee_id"),
+		assigneeName: text("assignee_name"),
+		assigneeEmail: text("assignee_email"),
+		teamId: text("team_id"),
+		teamKey: text("team_key"),
+		teamName: text("team_name"),
+		// Epoch ms, from Linear's issue timestamps.
+		issueCreatedAt: integer("issue_created_at"),
+		issueUpdatedAt: integer("issue_updated_at"),
+		// Host clock (epoch ms) at the last upsert by the poller.
+		syncedAt: integer("synced_at")
+			.notNull()
+			.$defaultFn(() => Date.now()),
+	},
+	(table) => [
+		index("linear_tickets_team_idx").on(table.teamId),
+		index("linear_tickets_updated_idx").on(table.issueUpdatedAt),
+	],
+);

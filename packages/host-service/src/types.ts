@@ -8,6 +8,7 @@ import type { ChatRuntimeManager } from "./runtime/chat";
 import type { WorkspaceFilesystemManager } from "./runtime/filesystem";
 import type { GitCredentialProvider, GitFactory } from "./runtime/git";
 import type { LinearAuthService } from "./runtime/linear-auth";
+import type { LinearTicketsRuntime } from "./runtime/linear-tickets";
 import type {
 	MemoryConsolidationService,
 	MemoryEmbeddingsService,
@@ -32,6 +33,8 @@ export interface HostServiceRuntime {
 	pullRequests: PullRequestRuntimeManager;
 	/** Host-local Linear connection: one-button PKCE connect + token store (W7 M1). */
 	linearAuth: LinearAuthService;
+	/** Host-local Linear ticket poller + cache + stream (W7 M2). */
+	linearTickets: LinearTicketsRuntime;
 	/** Lightweight per-project structural + lexical index (Superset Memory B3). */
 	memoryIndex: ProjectIndexService;
 	/** Retrieval-bundle assembly + telemetry stats (Superset Memory B4). */

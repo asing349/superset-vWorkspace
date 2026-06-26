@@ -56,7 +56,7 @@ The differentiator vs. wave-4: Linear becomes usable **with zero cloud setup** (
 ## Progress
 
 - [x] M1 — Host-side PKCE connect + local encrypted token store — **done 2026-06-26T08:54Z**: `linear.auth.*` host router (`getConnection`/`startConnect`/`consumeCallback`/`completeConnect`/`cancelConnect`/`disconnect`/`refresh`) running **PKCE** OAuth (no secret), tokens stored host-local **encrypted** (AES-256-GCM, machine-derived key) in the new `linear_local_auth` SQLite table (migration **0015**); one-button "Connect Linear (this Mac)" + local status in Settings → Integrations, **gated on cloud being disconnected** (cloud-precedence, both server-side gate + disabled button w/ explainer); redirect mechanism chosen (OQ1 → **loopback HTTP listener**). Gates green: typecheck 29/29, `bun run lint` exit 0, `bun test packages/host-service` 1018 pass / 0 fail (16 new). **Note for M2:** the next migration is **0016** (M1 took 0015); `linear_tickets` should be generated as 0016, not 0015 as originally written.
-- [ ] M2 — Local ticket fetch + host store + stream: host runtime poller (`@linear/sdk`) → new `linear_tickets` host SQLite table → tRPC query/subscription to the renderer; interval poll + manual Refresh; team picker (reuse `getTeams`).
+- [x] M2 — Local ticket fetch + host store + stream — **done 2026-06-26T09:17Z**: host runtime poller `LinearTicketsRuntime` (`packages/host-service/src/runtime/linear-tickets/`) fetches the viewer's issues (assigned-to-me OR created-by-me, 90-day window) with the M1 token via `@linear/sdk` (`new LinearClient({ accessToken })` + `client.client.request(ISSUES_QUERY)`), upserts into the new host SQLite **`linear_tickets`** table (migration **0016**), and streams via `linear.tickets.*` (`list` query, `teams` query, `refresh` mutation, `onChange` observable subscription). Interval poll (default **45s**) + manual Refresh; **strict no-op with no local token** (never builds a client / hits the network). Team picker ports cloud `getTeams` host-side. Renderer surfaces the tickets + team filter + Refresh under Settings → Integrations → "This Mac (local)" (`LinearLocalTickets`, reads via `list` with a 15s refetch since the renderer host client is httpLink-only). Nothing written to the cloud DB. Gates green: typecheck 29/29, `bun run lint` exit 0, host-service tests (12 new across `store.test.ts` + `LinearTicketsRuntime.test.ts`).
 - [ ] M3 — Source-agnostic ticket layer: host `tickets.*` that resolves the active source (**cloud if connected, else local**) at read time, tags `source`, routes writeback to the active source; renderer ticket list reads it with a source badge.
 - [ ] M4 — Wave-4 ticket→PR on the active source: orchestrator reads the source-agnostic layer; status/comment writeback dispatched to the active source (cloud `ctx.api.task.update` / local Linear API).
 - [ ] M5 — Coexistence/precedence polish: independent status for both connection types; local connect disabled-with-explainer while cloud active; per-source team filters; disconnect purges the local token; refresh/expiry handling; from-source dev `LINEAR_DESKTOP_CLIENT_ID`; docs.
@@ -88,6 +88,13 @@ Timestamp each item when checked off; split partials into done/remaining.
   Evidence: `isCloudLinearConnected` calls the cloud `integration.linear.getConnection` via `ctx.api`; in local dev that throws/unauthorized, so the helper catches and returns `false`. A cloud connection counts as active only when the query returns a non-null row with `needsReconnect === false`.
 
 - Observation (M1): host SQLite drizzle is **synchronous** (`.get()`/`.all()`/`.run()`), and host-service tests build the db with `bun:sqlite` + `drizzle-orm/bun-sqlite` (prod uses `better-sqlite3`). The new store/tests follow that.
+
+- Observation (M2): the renderer's host-service tRPC client is **httpLink-only** — it cannot consume host-side tRPC subscriptions (only the `electronTrpc` main↔renderer client supports observables, e.g. `ports.subscribe`). The host `linear.tickets.onChange` observable therefore mirrors `terminalAgents.onWorkspaceChange`: a host-side streaming primitive consumed in-process / by tests, while the renderer reads `linear.tickets.list` on a refetch interval (poll-based stream) + manual Refresh. M3 can bridge `onChange` to an `electronTrpc` subscription if true push to the renderer is wanted.
+  Evidence: `apps/desktop/src/renderer/lib/host-service-client.ts` builds the client with `httpLink` only; the existing `terminalAgents.onWorkspaceChange` carries the comment "For host-side consumers; the renderer reads via `listByWorkspace` since its tRPC client is httpLink-only."
+
+- Observation (M2): the cloud issue-sync query is directly portable. The poller reuses the exact `client.client.request(ISSUES_QUERY, { filter })` shape from `apps/api/.../initial-sync/utils.ts`; only the filter changed to the viewer's issues (`or: [{ assignee: { isMe: { eq: true } } }, { creator: { isMe: { eq: true } } }]` + a 90-day `updatedAt` window + optional `team.id`).
+
+- Observation (M2): the poller's no-op-without-token guarantee is enforced **before** building a client — `resolveToken()` returns null ⇒ `runPoll` returns `{ polled: false, count: 0 }` without ever calling `createClient`. The `createClient` factory is injected, so the test asserts the factory is never invoked when disconnected (no live API, no network).
 
 (Add observations as work proceeds.)
 
@@ -123,6 +130,11 @@ Timestamp each item when checked off; split partials into done/remaining.
 
 - Decision: **No cloud schema change; cloud Linear routes/tables untouched.** New host SQLite tables only.
   Rationale: Carry the prior-wave discipline; keep egress/cost/risk controlled and the change additive. Date/Author: 2026-06-26.
+
+- Decision (M2): use **`@linear/sdk`** (`new LinearClient({ accessToken })`) for the ticket poller, not a hand-rolled GraphQL POST (M1 chose raw POST only to avoid adding the dep for one viewer query).
+  Rationale: M2 needs paginated issue queries + `teams()`; the SDK's `client.client.request(...)` lets us reuse the cloud `ISSUES_QUERY` verbatim and `client.teams()` for the picker, so the host porting stays 1:1 with the cloud integration. The dep is already in the monorepo (`packages/trpc`/`apps/api` at `68.1.1`); added to `packages/host-service/package.json` at the same pin. The Linear data layer is behind an injectable `LinearTicketClient` interface, so tests run against a fake (no live API in CI) and the SDK is never imported by tests. Date/Author: 2026-06-26, M2 implementation.
+
+- Decision (M2): the local ticket source is **read-time only and host-local** — the poller upserts into `linear_tickets` keyed on the stable Linear issue UUID; it never writes the cloud `tasks` table. The team filter is applied at **read time** in the store (`list({ teamId })`), so the picker narrows the cached list without re-polling. Date/Author: 2026-06-26, M2 implementation.
 
 
 ## Context and Orientation
