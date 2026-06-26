@@ -9,11 +9,13 @@ import { env } from "renderer/env.renderer";
 import { apiTrpcClient } from "renderer/lib/api-trpc-client";
 import { authClient } from "renderer/lib/auth-client";
 import { useCollections } from "renderer/routes/_authenticated/providers/CollectionsProvider";
+import { useLocalHostService } from "renderer/routes/_authenticated/providers/LocalHostServiceProvider";
 import {
 	isItemVisible,
 	SETTING_ITEM_ID,
 	type SettingItemId,
 } from "../../../utils/settings-search";
+import { IntegrationTickets } from "./components/IntegrationTickets";
 import { LinearLocalConnection } from "./components/LinearLocalConnection";
 
 interface IntegrationsSettingsProps {
@@ -35,6 +37,7 @@ export function IntegrationsSettings({
 	const { data: session } = authClient.useSession();
 	const activeOrganizationId = session?.session?.activeOrganizationId;
 	const collections = useCollections();
+	const { activeHostUrl } = useLocalHostService();
 
 	const { data: integrations } = useLiveQuery(
 		(q) =>
@@ -134,6 +137,7 @@ export function IntegrationsSettings({
 							onManage={() => handleOpenWeb("/integrations/linear")}
 						/>
 						<LinearLocalConnection cloudConnected={isLinearConnected} />
+						{activeHostUrl && <IntegrationTickets hostUrl={activeHostUrl} />}
 					</>
 				)}
 

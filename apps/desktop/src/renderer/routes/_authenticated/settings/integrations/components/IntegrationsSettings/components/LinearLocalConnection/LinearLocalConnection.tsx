@@ -4,7 +4,6 @@ import { useCallback, useEffect, useState } from "react";
 import { getHostServiceClientByUrl } from "renderer/lib/host-service-client";
 import { electronTrpcClient } from "renderer/lib/trpc-client";
 import { useLocalHostService } from "renderer/routes/_authenticated/providers/LocalHostServiceProvider";
-import { LinearLocalTickets } from "./components/LinearLocalTickets";
 
 // Wave-7 M1 — one-button "Connect Linear (this Mac)" + local status, shown
 // beside the cloud Linear connection. Cloud-precedence: while a cloud Linear
@@ -32,9 +31,6 @@ export function LinearLocalConnection({
 	const [isConnecting, setIsConnecting] = useState(false);
 	const [pollEnabled, setPollEnabled] = useState(false);
 	const [error, setError] = useState<string | null>(null);
-	const [ticketTeamId, setTicketTeamId] = useState<string | undefined>(
-		undefined,
-	);
 
 	const connectionQueryKey = [
 		"linear-local-connection",
@@ -226,13 +222,6 @@ export function LinearLocalConnection({
 					)}
 				</div>
 			</div>
-			{isLocalConnected && activeHostUrl && (
-				<LinearLocalTickets
-					hostUrl={activeHostUrl}
-					teamId={ticketTeamId}
-					onTeamChange={setTicketTeamId}
-				/>
-			)}
 		</div>
 	);
 }

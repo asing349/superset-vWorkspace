@@ -53,6 +53,11 @@ import {
 	reconcileTicketRunForPr,
 } from "./runtime/ticket-runs";
 import {
+	fetchCloudTickets,
+	mapLocalTicketToUnified,
+	TicketsRuntime,
+} from "./runtime/tickets";
+import {
 	createSqliteWorkspaceGroupStore,
 	WorkspaceGroupResolver,
 } from "./runtime/workspace-groups";
@@ -278,6 +283,21 @@ export function createApp(options: CreateAppOptions): CreateAppResult {
 		},
 	});
 
+	// Wave-7 M3: source-agnostic ticket layer. Resolves THE SINGLE ACTIVE SOURCE
+	// at read time under cloud-precedence — cloud Linear-synced `tasks` (via the
+	// cloud API client) when a cloud connection is active, else the M2 host-local
+	// `linear_tickets` cache, else nothing. Composition is read-time only: nothing
+	// is persisted and the local source is never written into the cloud `tasks`
+	// table. All deps are injected so the resolver is testable against fakes.
+	const tickets = new TicketsRuntime({
+		isCloudConnected: () =>
+			isCloudLinearConnected({ api, organizationId: config.organizationId }),
+		isLocalConnected: () => linearAuthStore.isConnected(),
+		listCloudTickets: () => fetchCloudTickets({ api }),
+		listLocalTickets: (filter) =>
+			linearTickets.list(filter).map(mapLocalTicketToUnified),
+	});
+
 	const runtime = {
 		auth: chatService,
 		chat: chatRuntime,
@@ -285,6 +305,7 @@ export function createApp(options: CreateAppOptions): CreateAppResult {
 		pullRequests: pullRequestRuntime,
 		linearAuth,
 		linearTickets,
+		tickets,
 		memoryIndex,
 		memoryRetrieve,
 		memoryConsolidation,

@@ -17,6 +17,7 @@ import type {
 	ProjectIndexService,
 } from "./runtime/memory";
 import type { PullRequestRuntimeManager } from "./runtime/pull-requests";
+import type { TicketsRuntime } from "./runtime/tickets";
 import type {
 	WorkspaceGroupResolver,
 	WorkspaceGroupStore,
@@ -35,6 +36,8 @@ export interface HostServiceRuntime {
 	linearAuth: LinearAuthService;
 	/** Host-local Linear ticket poller + cache + stream (W7 M2). */
 	linearTickets: LinearTicketsRuntime;
+	/** Source-agnostic ticket layer: resolves the active source at read time (W7 M3). */
+	tickets: TicketsRuntime;
 	/** Lightweight per-project structural + lexical index (Superset Memory B3). */
 	memoryIndex: ProjectIndexService;
 	/** Retrieval-bundle assembly + telemetry stats (Superset Memory B4). */
