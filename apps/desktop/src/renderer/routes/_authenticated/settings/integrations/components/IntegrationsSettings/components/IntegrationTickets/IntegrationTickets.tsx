@@ -1,7 +1,9 @@
 import { Button } from "@superset/ui/button";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useState } from "react";
+import { HiMiniPlay } from "react-icons/hi2";
 import { getHostServiceClientByUrl } from "renderer/lib/host-service-client";
+import { LocalTicketRunPanel } from "./components/LocalTicketRunPanel";
 import { ticketSourceLabel } from "./ticketSourceLabel";
 
 // Wave-7 M3 — source-agnostic ticket list. Reads the host `tickets.list`
@@ -24,6 +26,8 @@ interface IntegrationTicketsProps {
 export function IntegrationTickets({ hostUrl }: IntegrationTicketsProps) {
 	const queryClient = useQueryClient();
 	const [teamId, setTeamId] = useState<string | undefined>(undefined);
+	// Which local ticket has its "Run → PR" launcher expanded (one at a time).
+	const [openRunUnifiedId, setOpenRunUnifiedId] = useState<string | null>(null);
 
 	const ticketsKey = ["unified-tickets", hostUrl, teamId ?? null] as const;
 
@@ -114,39 +118,69 @@ export function IntegrationTickets({ hostUrl }: IntegrationTicketsProps) {
 				</div>
 			) : (
 				<ul className="mt-2 flex flex-col gap-1">
-					{tickets.map((ticket) => (
-						<li
-							key={ticket.unifiedId}
-							className="flex items-center gap-2 text-xs min-w-0"
-						>
-							<span className="shrink-0 rounded border border-border px-1 py-0.5 text-[10px] text-muted-foreground">
-								{ticketSourceLabel(ticket.source)}
-							</span>
-							<span className="font-mono text-muted-foreground shrink-0">
-								{ticket.identifier}
-							</span>
-							{ticket.url ? (
-								<a
-									href={ticket.url}
-									target="_blank"
-									rel="noreferrer"
-									className="truncate hover:underline"
-									title={ticket.title}
-								>
-									{ticket.title}
-								</a>
-							) : (
-								<span className="truncate" title={ticket.title}>
-									{ticket.title}
-								</span>
-							)}
-							{ticket.state.name && (
-								<span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
-									{ticket.state.name}
-								</span>
-							)}
-						</li>
-					))}
+					{tickets.map((ticket) => {
+						const isLocalTicket = ticket.source === "local";
+						const isRunOpen = openRunUnifiedId === ticket.unifiedId;
+						return (
+							<li
+								key={ticket.unifiedId}
+								className="flex flex-col gap-1 min-w-0"
+							>
+								<div className="flex items-center gap-2 text-xs min-w-0">
+									<span className="shrink-0 rounded border border-border px-1 py-0.5 text-[10px] text-muted-foreground">
+										{ticketSourceLabel(ticket.source)}
+									</span>
+									<span className="font-mono text-muted-foreground shrink-0">
+										{ticket.identifier}
+									</span>
+									{ticket.url ? (
+										<a
+											href={ticket.url}
+											target="_blank"
+											rel="noreferrer"
+											className="truncate hover:underline"
+											title={ticket.title}
+										>
+											{ticket.title}
+										</a>
+									) : (
+										<span className="truncate" title={ticket.title}>
+											{ticket.title}
+										</span>
+									)}
+									{ticket.state.name && (
+										<span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+											{ticket.state.name}
+										</span>
+									)}
+									{/* Local tickets launch the wave-4 ticket→PR run inline (M5).
+									    Cloud tickets keep launching from the cloud task page. */}
+									{isLocalTicket && (
+										<Button
+											variant="ghost"
+											size="sm"
+											className="ml-auto h-6 shrink-0 gap-1 px-2 text-[11px]"
+											onClick={() =>
+												setOpenRunUnifiedId(isRunOpen ? null : ticket.unifiedId)
+											}
+										>
+											<HiMiniPlay className="size-3" />
+											{isRunOpen ? "Hide" : "Run → PR"}
+										</Button>
+									)}
+								</div>
+								{isLocalTicket && isRunOpen && (
+									<LocalTicketRunPanel
+										unifiedId={ticket.unifiedId}
+										identifier={ticket.identifier}
+										title={ticket.title}
+										description={ticket.description}
+										onClose={() => setOpenRunUnifiedId(null)}
+									/>
+								)}
+							</li>
+						);
+					})}
 				</ul>
 			)}
 		</div>

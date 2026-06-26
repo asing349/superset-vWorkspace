@@ -79,6 +79,30 @@ bun run build          # Build all packages
 
 See [`AGENTS.md`](./AGENTS.md) for repo structure, monorepo conventions, and database/migration workflow.
 
+## Optional: Linear "this Mac" connection (from-source)
+
+The desktop can connect Linear **per-machine** via a one-button host-side PKCE
+flow (no client secret), independent of the org-scoped cloud Linear integration.
+This is the only way to use Linear in local-only Docker dev (where cloud Linear
+ships fake credentials). It is a **fallback under cloud-precedence** — connectable
+only when no cloud Linear connection is active.
+
+PKCE needs a registered public Linear OAuth `client_id` (not a secret). Production
+ships one; from-source builds supply their own:
+
+```bash
+# Public Linear OAuth client id (NOT a secret). Required for "Connect Linear
+# (this Mac)"; absent → the button reports that a client id is required.
+LINEAR_DESKTOP_CLIENT_ID=lin_oauth_xxx
+
+# Optional — loopback redirect port (default 52718). Register the matching
+# redirect URI on the Linear OAuth app: http://127.0.0.1:<port>/callback
+LINEAR_DESKTOP_REDIRECT_PORT=52718
+```
+
+Full setup + the cloud-precedence rule:
+[`apps/desktop/docs/LINEAR_LOCAL_CONNECTION.md`](./apps/desktop/docs/LINEAR_LOCAL_CONNECTION.md).
+
 ## Troubleshooting
 
 - **`caddy trust` prompts for sudo** — expected, once per machine. Without it Chromium rejects `https://localhost:*` with `ERR_CERT_AUTHORITY_INVALID`.

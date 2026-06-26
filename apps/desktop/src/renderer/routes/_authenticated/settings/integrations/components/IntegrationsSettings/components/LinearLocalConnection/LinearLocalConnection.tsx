@@ -1,16 +1,27 @@
+import { alert } from "@superset/ui/atoms/Alert";
 import { Button } from "@superset/ui/button";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useState } from "react";
 import { getHostServiceClientByUrl } from "renderer/lib/host-service-client";
 import { electronTrpcClient } from "renderer/lib/trpc-client";
 import { useLocalHostService } from "renderer/routes/_authenticated/providers/LocalHostServiceProvider";
+import {
+	deriveLinearLocalStatus,
+	deriveLocalConnectAffordance,
+	formatLinearLocalStatusLabel,
+	isLocalActiveSource,
+} from "./linearLocalConnectionState";
 
-// Wave-7 M1 — one-button "Connect Linear (this Mac)" + local status, shown
+// Wave-7 M1 + M5 — one-button "Connect Linear (this Mac)" + local status, shown
 // beside the cloud Linear connection. Cloud-precedence: while a cloud Linear
 // connection is active, the local connect button is disabled with an explainer
-// ("disconnect cloud Linear to connect this Mac"). The PKCE flow itself runs
-// host-side; here we only start it, open the system browser, and poll for the
-// captured redirect code. No token ever reaches the renderer.
+// ("disconnect cloud Linear to connect this Mac") and a stored local token is
+// shown as dormant. M5 adds: an active/dormant indicator (so the active source
+// is obvious), an expired→one-button-reconnect prompt (the host's lazy PKCE
+// refresh runs first; if it can't renew, the card prompts a re-connect), and a
+// confirm before disconnect (which purges ONLY the local token host-side). The
+// PKCE flow itself runs host-side; here we only start it, open the system
+// browser, and poll for the captured redirect code. No token reaches the renderer.
 
 interface LinearLocalConnectionProps {
 	/** True when a cloud Linear connection is active (cloud-precedence). */
@@ -142,39 +153,119 @@ export function LinearLocalConnection({
 			setError(getErrorMessage(err, "Failed to disconnect Linear")),
 	});
 
-	const connection = connectionQuery.data;
-	const isLocalConnected = connection?.connected ?? false;
-	const busy =
-		isConnecting || completeMutation.isPending || disconnectMutation.isPending;
+	// Expired-token recovery: ask the host to run its lazy PKCE refresh. If the
+	// refresh token is gone/rejected the host purges the local token and reports
+	// `connected:false`, so the card falls back to the one-button connect prompt.
+	const refreshMutation = useMutation({
+		mutationFn: () => {
+			if (!activeHostUrl) throw new Error("Host service unavailable");
+			return getHostServiceClientByUrl(
+				activeHostUrl,
+			).linear.auth.refresh.mutate();
+		},
+		onSuccess: () => {
+			setError(null);
+			refetchConnection();
+		},
+		onError: (err) =>
+			setError(getErrorMessage(err, "Failed to refresh Linear session")),
+	});
 
-	const statusLabel = isLocalConnected
-		? connection?.viewer
-			? `Connected as ${connection.viewer}${
-					connection.workspace ? ` (${connection.workspace})` : ""
-				}`
-			: "Connected"
-		: isConnecting
-			? "Waiting for browser authorization…"
-			: "Not connected";
+	const confirmDisconnect = useCallback(() => {
+		alert({
+			title: "Disconnect Linear (this Mac)?",
+			description:
+				"This purges the local Linear token from this Mac. Your cloud Linear connection (if any) is unaffected. You can reconnect anytime with one button.",
+			actions: [
+				{
+					label: "Disconnect",
+					variant: "destructive",
+					onClick: () => disconnectMutation.mutate(),
+				},
+				{ label: "Cancel", variant: "ghost" },
+			],
+		});
+	}, [disconnectMutation]);
+
+	const connection = connectionQuery.data;
+	const localStatus = deriveLinearLocalStatus({
+		connection,
+		now: Date.now(),
+	});
+	const isLocalConnected = localStatus !== "disconnected";
+	const isActiveSource = isLocalActiveSource({ cloudConnected, localStatus });
+	const isDormant = isLocalConnected && cloudConnected;
+	// Expiry only matters when the local connection would be the ACTIVE source:
+	// while cloud is connected the local token is dormant regardless of expiry, so
+	// we don't nag a re-connect — the dormant state takes over.
+	const isExpired = localStatus === "expired" && !cloudConnected;
+
+	const busy =
+		isConnecting ||
+		completeMutation.isPending ||
+		disconnectMutation.isPending ||
+		refreshMutation.isPending;
+
+	const connectAffordance = deriveLocalConnectAffordance({
+		cloudConnected,
+		busy,
+		hostAvailable: !!activeHostUrl,
+	});
+
+	const statusLabel = isExpired
+		? "Session expired — reconnect to continue"
+		: isLocalConnected
+			? formatLinearLocalStatusLabel({ connection })
+			: isConnecting
+				? "Waiting for browser authorization…"
+				: "Not connected";
+
+	const dotClass = isActiveSource
+		? "size-2 rounded-full bg-green-500"
+		: isExpired
+			? "size-2 rounded-full bg-amber-500"
+			: isDormant
+				? "size-2 rounded-full bg-muted-foreground/60"
+				: isLocalConnected
+					? "size-2 rounded-full bg-green-500"
+					: "size-2 rounded-full bg-muted-foreground/30";
 
 	return (
 		<div>
 			<div className="flex items-center justify-between gap-8 py-2 pl-11 pr-0">
 				<div className="min-w-0">
-					<div className="text-sm font-medium">This Mac (local)</div>
+					<div className="flex items-center gap-2">
+						<span className="text-sm font-medium">This Mac (local)</span>
+						{isActiveSource && (
+							<span className="rounded border border-green-500/40 px-1.5 py-0.5 text-[10px] font-normal text-green-600 dark:text-green-400">
+								Active
+							</span>
+						)}
+						{isDormant && (
+							<span className="rounded border border-border px-1.5 py-0.5 text-[10px] font-normal text-muted-foreground">
+								Dormant
+							</span>
+						)}
+					</div>
 					<div className="flex items-center gap-1.5 mt-0.5">
-						<span
-							className={
-								isLocalConnected
-									? "size-2 rounded-full bg-green-500"
-									: "size-2 rounded-full bg-muted-foreground/30"
-							}
-						/>
+						<span className={dotClass} />
 						<span className="text-xs text-muted-foreground">{statusLabel}</span>
 					</div>
+					{isDormant && (
+						<div className="text-xs text-muted-foreground mt-1">
+							Cloud Linear is active and takes precedence; this local connection
+							is dormant until you disconnect cloud Linear.
+						</div>
+					)}
 					{cloudConnected && !isLocalConnected && (
 						<div className="text-xs text-muted-foreground mt-1">
 							Disconnect cloud Linear to connect this Mac.
+						</div>
+					)}
+					{isExpired && (
+						<div className="text-xs text-muted-foreground mt-1">
+							Your local Linear session expired. Reconnect to keep syncing
+							tickets from this Mac.
 						</div>
 					)}
 					{error && (
@@ -184,12 +275,31 @@ export function LinearLocalConnection({
 					)}
 				</div>
 				<div className="flex items-center gap-2 shrink-0">
-					{isLocalConnected ? (
+					{isExpired ? (
+						<>
+							<Button
+								variant="outline"
+								size="sm"
+								disabled={busy}
+								onClick={() => refreshMutation.mutate()}
+							>
+								{refreshMutation.isPending ? "Refreshing…" : "Reconnect"}
+							</Button>
+							<Button
+								variant="ghost"
+								size="sm"
+								disabled={busy}
+								onClick={confirmDisconnect}
+							>
+								Disconnect
+							</Button>
+						</>
+					) : isLocalConnected ? (
 						<Button
 							variant="outline"
 							size="sm"
 							disabled={busy}
-							onClick={() => disconnectMutation.mutate()}
+							onClick={confirmDisconnect}
 						>
 							Disconnect
 						</Button>
@@ -207,12 +317,8 @@ export function LinearLocalConnection({
 						<Button
 							variant="outline"
 							size="sm"
-							disabled={cloudConnected || busy || !activeHostUrl}
-							title={
-								cloudConnected
-									? "Disconnect cloud Linear to connect this Mac"
-									: undefined
-							}
+							disabled={connectAffordance.disabled}
+							title={connectAffordance.reason ?? undefined}
 							onClick={() => {
 								void startConnect();
 							}}
