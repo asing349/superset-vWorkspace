@@ -50,6 +50,7 @@ import { markReviewerContextStale } from "./runtime/pr-review/reviewer-config-ca
 import { PullRequestRuntimeManager } from "./runtime/pull-requests";
 import {
 	createApiTaskWriteback,
+	createLinearLocalWriteback,
 	reconcileTicketRunForPr,
 } from "./runtime/ticket-runs";
 import {
@@ -147,6 +148,18 @@ export function createApp(options: CreateAppOptions): CreateAppResult {
 	// pull-requests runtime (event-driven branch sync) subscribe to it.
 	const gitWatcher = new GitWatcher(db, filesystem);
 	gitWatcher.start();
+
+	// Wave-7 M1: host-local Linear connection token store. Created here (before the
+	// PR runtime) so the wave-4 PR-loop reconciler can route LOCAL-sourced status
+	// writeback DIRECTLY to Linear with the M1 token (see onPullRequestLinked). The
+	// M1 auth service + M2/M3 runtimes reuse this same singleton store below.
+	const linearAuthStore = new LinearLocalAuthStore({ db });
+	// Wave-7 M4: direct-Linear writeback for local-sourced ticket→PR runs (no cloud
+	// round-trip). A strict no-op when there is no local token.
+	const linearLocalWriteback = createLinearLocalWriteback({
+		auth: linearAuthStore,
+	});
+
 	const pullRequestRuntime = new PullRequestRuntimeManager({
 		db,
 		execGh,
@@ -174,6 +187,9 @@ export function createApp(options: CreateAppOptions): CreateAppResult {
 			void reconcileTicketRunForPr({
 				db,
 				writeback: createApiTaskWriteback(api),
+				// W7-M4: route LOCAL-sourced runs directly to Linear with the M1 token
+				// (no cloud round-trip); cloud-sourced runs use the writeback above.
+				localWriteback: linearLocalWriteback,
 				projectId,
 				headBranch,
 				prUrl: url,
@@ -257,7 +273,6 @@ export function createApp(options: CreateAppOptions): CreateAppResult {
 	const linearRedirectPort = linearRedirectPortRaw
 		? Number.parseInt(linearRedirectPortRaw, 10)
 		: undefined;
-	const linearAuthStore = new LinearLocalAuthStore({ db });
 	const linearAuth = new LinearAuthService({
 		store: linearAuthStore,
 		checkCloudConnected: () =>

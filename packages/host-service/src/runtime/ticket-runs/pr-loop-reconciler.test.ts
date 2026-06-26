@@ -7,9 +7,11 @@ import { migrate } from "drizzle-orm/bun-sqlite/migrator";
 import type { HostDb } from "../../db/index.ts";
 import * as schema from "../../db/schema";
 import { projects, ticketRuns } from "../../db/schema";
+import type { LocalTicketWriteback } from "./linear-writeback.ts";
 import {
 	reconcileTicketRunForPr,
 	resolveInReviewStatusId,
+	resolveRunWritebackTarget,
 	type TaskStatusOption,
 	type TicketTaskWriteback,
 } from "./pr-loop-reconciler.ts";
@@ -49,6 +51,41 @@ function fakeWriteback(
 	};
 	return { writeback, calls };
 }
+
+/** A LOCAL (direct-Linear) writeback fake that records calls and never hits net. */
+function fakeLocalWriteback(options: { fail?: boolean } = {}) {
+	const calls: Array<{ issueId: string; prUrl: string }> = [];
+	const localWriteback: LocalTicketWriteback = {
+		async writeBack(input) {
+			if (options.fail) throw new Error("local writeback failed");
+			calls.push(input);
+		},
+	};
+	return { localWriteback, calls };
+}
+
+describe("resolveRunWritebackTarget (W7-M4 routing)", () => {
+	it("treats a bare/legacy taskId as cloud (back-compat)", () => {
+		expect(resolveRunWritebackTarget("task-1")).toEqual({
+			kind: "cloud",
+			taskId: "task-1",
+		});
+	});
+
+	it("routes a `cloud:<id>` unified id to the cloud task", () => {
+		expect(resolveRunWritebackTarget("cloud:abc-123")).toEqual({
+			kind: "cloud",
+			taskId: "abc-123",
+		});
+	});
+
+	it("routes a `local:<id>` unified id to the local Linear issue", () => {
+		expect(resolveRunWritebackTarget("local:issue-9")).toEqual({
+			kind: "local",
+			issueId: "issue-9",
+		});
+	});
+});
 
 describe("resolveInReviewStatusId (B6)", () => {
 	it("prefers a status whose name contains 'review'", () => {
@@ -248,5 +285,106 @@ describe("reconcileTicketRunForPr (B6 loop closure)", () => {
 
 		// Row already had this prUrl → not re-stamped.
 		expect(result.linked).toEqual([]);
+	});
+
+	it("routes a CLOUD-sourced run (`cloud:<id>`) through ctx.api.task.update", async () => {
+		db.insert(ticketRuns)
+			.values({
+				id: "run-cloud",
+				taskId: "cloud:cloud-task-9",
+				projectId: projectA,
+				status: "dispatched",
+				branch: "feat/cloud",
+			})
+			.run();
+		const { writeback, calls } = fakeWriteback({
+			statuses: [{ id: "rev", name: "In Review", type: "started" }],
+		});
+		const { localWriteback, calls: localCalls } = fakeLocalWriteback();
+
+		const result = await reconcileTicketRunForPr({
+			db,
+			writeback,
+			localWriteback,
+			projectId: projectA,
+			headBranch: "feat/cloud",
+			prUrl: "https://github.com/o/r/pull/11",
+		});
+
+		expect(result.taskWriteback).toBe("ok");
+		// Cloud writeback got the BARE cloud id (the `cloud:` prefix stripped).
+		expect(calls.updates).toEqual([
+			{
+				id: "cloud-task-9",
+				prUrl: "https://github.com/o/r/pull/11",
+				statusId: "rev",
+			},
+		]);
+		// And the local path was NOT touched.
+		expect(localCalls).toHaveLength(0);
+	});
+
+	it("routes a LOCAL-sourced run (`local:<id>`) to the DIRECT Linear writeback, NOT the cloud", async () => {
+		db.insert(ticketRuns)
+			.values({
+				id: "run-local",
+				taskId: "local:issue-77",
+				projectId: projectA,
+				status: "dispatched",
+				branch: "feat/local",
+			})
+			.run();
+		const { writeback, calls } = fakeWriteback({
+			statuses: [{ id: "rev", name: "In Review", type: "started" }],
+		});
+		const { localWriteback, calls: localCalls } = fakeLocalWriteback();
+
+		const result = await reconcileTicketRunForPr({
+			db,
+			writeback,
+			localWriteback,
+			projectId: projectA,
+			headBranch: "feat/local",
+			prUrl: "https://github.com/o/r/pull/12",
+		});
+
+		expect(result.linked).toEqual(["run-local"]);
+		expect(result.taskWriteback).toBe("ok");
+		// Local writeback got the bare Linear issue id + the PR url.
+		expect(localCalls).toEqual([
+			{ issueId: "issue-77", prUrl: "https://github.com/o/r/pull/12" },
+		]);
+		// CRUCIAL: NO cloud task.update for a local-sourced run.
+		expect(calls.updates).toHaveLength(0);
+		expect(calls.listCount).toBe(0);
+	});
+
+	it("a local-sourced writeback failure is swallowed (does NOT throw) and pr_url is still stamped", async () => {
+		db.insert(ticketRuns)
+			.values({
+				id: "run-local-fail",
+				taskId: "local:issue-88",
+				projectId: projectA,
+				status: "dispatched",
+				branch: "feat/local-fail",
+			})
+			.run();
+		const { writeback } = fakeWriteback();
+		const { localWriteback } = fakeLocalWriteback({ fail: true });
+
+		const result = await reconcileTicketRunForPr({
+			db,
+			writeback,
+			localWriteback,
+			projectId: projectA,
+			headBranch: "feat/local-fail",
+			prUrl: "https://github.com/o/r/pull/13",
+		});
+
+		expect(result.linked).toEqual(["run-local-fail"]);
+		expect(result.taskWriteback).toBe("failed");
+		expect(runRow("run-local-fail")?.prUrl).toBe(
+			"https://github.com/o/r/pull/13",
+		);
 	});
 });

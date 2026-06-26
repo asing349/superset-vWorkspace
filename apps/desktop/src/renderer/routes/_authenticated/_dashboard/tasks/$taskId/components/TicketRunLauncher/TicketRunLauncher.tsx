@@ -28,12 +28,19 @@ import type { UseTicketContextApprovalResult } from "../../hooks/useTicketContex
 import { useTicketRunStart } from "../../hooks/useTicketRunStart";
 import {
 	buildTicketRunRequest,
+	makeTicketRunUnifiedId,
 	multiRepoConfirmMessage,
 } from "../../utils/buildTicketRunRequest";
 
 interface TicketRunLauncherProps {
-	/** Cloud task id (Linear-synced `tasks.id`). */
+	/** Cloud task id (Linear-synced `tasks.id`); also the approved-context key. */
 	taskId: string;
+	/**
+	 * W7-M4: the source-tagged `unifiedId` from the source-agnostic ticket layer,
+	 * so the host routes run→PR writeback to the active source. Omitted on the
+	 * cloud task page → derived as `cloud:<taskId>` (the cloud path, unchanged).
+	 */
+	unifiedId?: string;
 	/** Human ticket key, e.g. "SUPER-172" (slug fallback). */
 	ticketKey: string;
 	/**
@@ -57,6 +64,7 @@ interface RecentProject {
 
 export function TicketRunLauncher({
 	taskId,
+	unifiedId,
 	ticketKey,
 	onPrimaryProjectChange,
 	approval,
@@ -213,6 +221,11 @@ export function TicketRunLauncher({
 		if (!primaryProjectId) return;
 		const request = buildTicketRunRequest({
 			taskId,
+			// Default to the cloud unified id on the cloud task page; a local entry
+			// passes its own `unifiedId` so writeback routes to the active source.
+			unifiedId:
+				unifiedId ??
+				makeTicketRunUnifiedId({ source: "cloud", sourceId: taskId }),
 			ticketKey,
 			primaryProjectId,
 			additionalProjectIds,

@@ -2,13 +2,27 @@ import { and, eq } from "drizzle-orm";
 import type { HostDb } from "../../db/index.ts";
 import { ticketRuns } from "../../db/schema.ts";
 import type { ApiClient } from "../../types.ts";
+import {
+	parseUnifiedTicketId,
+	resolveWritebackTarget,
+	type TicketWritebackTarget,
+} from "../tickets";
+import type { LocalTicketWriteback } from "./linear-writeback.ts";
 
 /**
  * B6 — close the ticket→PR loop. When the autonomous run's PR is first detected
  * (the PR-runtime `onPullRequestLinked` hook), match the PR's head branch to a
  * `ticket_runs.branch` (B5 recorded it), stamp the row's `pr_url`, and write the
- * PR url + an in-review status back to the cloud task — which the cloud side
- * pushes to Linear via the existing outbound `syncTask`.
+ * PR url + an in-review status back to the ACTIVE SOURCE.
+ *
+ * Wave-7 M4: the run carries a source-tagged id in `ticket_runs.taskId` (the
+ * `unifiedId` `${source}:${sourceId}`), so writeback is ROUTED by source:
+ *   - cloud → `ctx.api.task.update` (unchanged wave-4 behavior; the cloud side
+ *     pushes to Linear via the existing outbound `syncTask`).
+ *   - local → a DIRECT Linear update/comment with the M1 host token (no cloud
+ *     round-trip).
+ * A bare/legacy `taskId` (no `source:` prefix — wave-4 stored the cloud `tasks.id`
+ * directly) is treated as CLOUD, so pre-M4 rows + the cloud path are unchanged.
  *
  * Multi-repo: each run row shares the one `taskId`, so every repo's PR writes
  * its url back to the SAME ticket (each call links one more PR to the ticket).
@@ -18,6 +32,26 @@ import type { ApiClient } from "../../types.ts";
  * re-written; and any writeback error is swallowed + warned so PR sync never
  * fails on loop closure.
  */
+
+// Source prefixes a wave-7 `unifiedId` carries. A `ticket_runs.taskId` WITHOUT one
+// of these is a legacy/bare cloud task id (wave-4) and routes to the cloud path.
+const UNIFIED_SOURCE_PREFIXES = ["cloud:", "local:"] as const;
+
+/**
+ * Resolve where a run's writeback must go from its stored `taskId`. Tolerant of
+ * legacy/bare cloud task ids (no `source:` prefix → cloud) so pre-M4 rows and the
+ * unchanged cloud path keep working; a `${source}:${sourceId}` id is parsed via
+ * the M3 unified-id helpers and routed by source.
+ */
+export function resolveRunWritebackTarget(
+	taskId: string,
+): TicketWritebackTarget {
+	const isUnified = UNIFIED_SOURCE_PREFIXES.some((prefix) =>
+		taskId.startsWith(prefix),
+	);
+	if (!isUnified) return { kind: "cloud", taskId };
+	return resolveWritebackTarget(parseUnifiedTicketId(taskId));
+}
 
 /** A status as returned by the cloud `task.statuses.list` query. */
 export interface TaskStatusOption {
@@ -68,16 +102,25 @@ export interface ReconcileTicketRunResult {
 
 /**
  * Match a detected PR to its ticket run(s) and close the loop. Never throws.
+ *
+ * Wave-7 M4: writeback is routed by the run's source (see
+ * {@link resolveRunWritebackTarget}). The cloud path uses `writeback`
+ * (`ctx.api.task.update`, unchanged); a local-sourced run uses `localWriteback`
+ * (direct Linear API). `localWriteback` is optional so legacy/cloud-only callers
+ * and the existing wave-4 tests are unaffected.
  */
 export async function reconcileTicketRunForPr(options: {
 	db: HostDb;
 	writeback: TicketTaskWriteback;
+	/** Direct-Linear writeback for LOCAL-sourced runs (W7-M4). Required only for local. */
+	localWriteback?: LocalTicketWriteback;
 	projectId: string;
 	headBranch: string;
 	prUrl: string;
 	now?: () => number;
 }): Promise<ReconcileTicketRunResult> {
-	const { db, writeback, projectId, headBranch, prUrl } = options;
+	const { db, writeback, localWriteback, projectId, headBranch, prUrl } =
+		options;
 	const now = options.now ?? Date.now;
 	const result: ReconcileTicketRunResult = {
 		linked: [],
@@ -118,21 +161,36 @@ export async function reconcileTicketRunForPr(options: {
 
 		if (!taskId) return result;
 
-		// Write the PR url + in-review status back to the cloud task (→ Linear).
+		// W7-M4: route the PR url + in-review status writeback to the ACTIVE SOURCE.
+		const target = resolveRunWritebackTarget(taskId);
 		try {
-			let statusId: string | undefined;
-			try {
-				const statuses = await writeback.listStatuses();
-				statusId = resolveInReviewStatusId(statuses) ?? undefined;
-			} catch (statusErr) {
-				// Status resolution is best-effort — still write the prUrl below.
+			if (target.kind === "cloud") {
+				// Cloud path — unchanged wave-4 behavior (→ Linear via outbound syncTask).
+				let statusId: string | undefined;
+				try {
+					const statuses = await writeback.listStatuses();
+					statusId = resolveInReviewStatusId(statuses) ?? undefined;
+				} catch (statusErr) {
+					// Status resolution is best-effort — still write the prUrl below.
+					console.warn(
+						"[host-service:ticket-run] failed to resolve in-review status",
+						{ projectId, taskId, error: statusErr },
+					);
+				}
+				await writeback.updateTask({ id: target.taskId, prUrl, statusId });
+				result.taskWriteback = "ok";
+			} else if (localWriteback) {
+				// Local path — DIRECT Linear writeback with the M1 host token. No cloud
+				// round-trip: a comment with the PR url + best-effort in-review state.
+				await localWriteback.writeBack({ issueId: target.issueId, prUrl });
+				result.taskWriteback = "ok";
+			} else {
+				// A local-sourced run with no local writeback wired — skip (never throw).
 				console.warn(
-					"[host-service:ticket-run] failed to resolve in-review status",
-					{ projectId, taskId, error: statusErr },
+					"[host-service:ticket-run] local writeback unavailable; skipping",
+					{ projectId, issueId: target.issueId },
 				);
 			}
-			await writeback.updateTask({ id: taskId, prUrl, statusId });
-			result.taskWriteback = "ok";
 		} catch (writebackErr) {
 			result.taskWriteback = "failed";
 			console.warn(

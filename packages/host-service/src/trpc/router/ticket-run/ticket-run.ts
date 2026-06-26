@@ -22,8 +22,18 @@ import { workspacesRouter } from "../workspaces";
  */
 
 const startInputSchema = z.object({
-	/** Cloud task id (Linear-synced `tasks.id`). */
+	/**
+	 * The approved-context key. Cloud ticket → cloud `tasks.id` (Linear-synced);
+	 * local ticket → the source-tagged `unifiedId` it was keyed under.
+	 */
 	taskId: z.string().min(1),
+	/**
+	 * W7-M4: the source-tagged `unifiedId` (`${source}:${sourceId}`) from the
+	 * source-agnostic ticket layer, so the run→PR writeback routes to the active
+	 * source (cloud `task.update` / direct Linear). Omitted by legacy cloud callers
+	 * → the bare `taskId` is treated as cloud (unchanged).
+	 */
+	unifiedId: z.string().min(1).optional(),
 	/** Ticket key (e.g. "SUPER-172"), carried into branch/PR for B6 linking. */
 	ticketKey: z.string().min(1),
 	/** One entry per repo the run touches (single by default; N if multi-repo). */

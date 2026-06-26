@@ -15,10 +15,23 @@ export {
 	type TicketRunStatus,
 } from "./dispatch.ts";
 export {
+	buildPrLinkCommentBody,
+	type CreateLinearLocalWritebackDeps,
+	createLinearLocalWriteback,
+	createSdkLinearWritebackClient,
+	type LinearWorkflowState,
+	type LinearWritebackClient,
+	type LinearWritebackClientFactory,
+	type LocalTicketWriteback,
+	pickInReviewWorkflowStateId,
+	SdkLinearWritebackClient,
+} from "./linear-writeback.ts";
+export {
 	createApiTaskWriteback,
 	type ReconcileTicketRunResult,
 	reconcileTicketRunForPr,
 	resolveInReviewStatusId,
+	resolveRunWritebackTarget,
 	type TaskStatusOption,
 	type TicketTaskWriteback,
 } from "./pr-loop-reconciler.ts";

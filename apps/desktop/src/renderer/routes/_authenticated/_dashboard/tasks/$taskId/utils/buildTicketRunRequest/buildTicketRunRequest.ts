@@ -10,9 +10,36 @@ export interface TicketRunRepo {
 	baseBranch?: string;
 }
 
+/** Which source a ticket resolved from (mirrors the host `TicketSource`). */
+export type TicketRunSource = "cloud" | "local";
+
+/**
+ * Build the source-tagged unified id (`${source}:${sourceId}`) the host's
+ * source-agnostic ticket layer uses to route run→PR writeback to the active
+ * source. Kept in lockstep with the host `makeUnifiedTicketId` — same format.
+ */
+export function makeTicketRunUnifiedId({
+	source,
+	sourceId,
+}: {
+	source: TicketRunSource;
+	sourceId: string;
+}): string {
+	return `${source}:${sourceId}`;
+}
+
 export interface TicketRunRequest {
-	/** Cloud task id (Linear-synced `tasks.id`). */
+	/**
+	 * The approved-context key. Cloud ticket → cloud `tasks.id`; local ticket →
+	 * the source-tagged `unifiedId` it is keyed under.
+	 */
 	taskId: string;
+	/**
+	 * W7-M4: the source-tagged `unifiedId` (`${source}:${sourceId}`) so the host
+	 * routes run→PR writeback to the active source (cloud `task.update` / direct
+	 * Linear). The run otherwise works identically regardless of source.
+	 */
+	unifiedId: string;
 	/** Human ticket key, e.g. "SUPER-172" (slug fallback). */
 	ticketKey: string;
 	/** Repos to run, PRIMARY FIRST. One per repo -> one worktree + one PR. */
@@ -26,6 +53,8 @@ export interface TicketRunRequest {
 
 interface BuildTicketRunRequestParams {
 	taskId: string;
+	/** Source-tagged unified id from the source-agnostic ticket layer (W7-M4). */
+	unifiedId: string;
 	ticketKey: string;
 	/** The primary (default) repo's host project id. */
 	primaryProjectId: string;
@@ -43,6 +72,7 @@ interface BuildTicketRunRequestParams {
  */
 export function buildTicketRunRequest({
 	taskId,
+	unifiedId,
 	ticketKey,
 	primaryProjectId,
 	additionalProjectIds,
@@ -56,6 +86,7 @@ export function buildTicketRunRequest({
 	}
 	return {
 		taskId,
+		unifiedId,
 		ticketKey,
 		repos,
 		approvedContextProjectId: primaryProjectId,

@@ -3,6 +3,7 @@ import { and, eq } from "drizzle-orm";
 import type { HostDb } from "../../db/index.ts";
 import { approvedTicketContext, ticketRuns } from "../../db/schema.ts";
 import type { MemoryRetrieveService } from "../memory/retrieve-service.ts";
+import { parseUnifiedTicketId } from "../tickets";
 import { assembleTicketPrompt } from "./assemble-prompt.ts";
 
 /**
@@ -28,8 +29,19 @@ export interface TicketRunRepoInput {
 }
 
 export interface DispatchTicketRunInput {
-	/** Cloud task id (Linear-synced `tasks.id`). */
+	/**
+	 * The approved-context key (B3 store key `(projectId, taskId)`). For a cloud
+	 * ticket this is the cloud `tasks.id` (Linear-synced); for a local ticket it is
+	 * the source-tagged `unifiedId` the renderer keys the approved context under.
+	 */
 	taskId: string;
+	/**
+	 * W7-M4: the source-tagged `unifiedId` (`${source}:${sourceId}`) the PR-loop
+	 * reconciler parses to route writeback to the ACTIVE SOURCE. When omitted
+	 * (legacy wave-4 cloud callers) the bare `taskId` is stored and treated as
+	 * cloud, so the cloud path stays byte-for-byte unchanged.
+	 */
+	unifiedId?: string;
 	/** Ticket key (e.g. "SUPER-172"), carried into branch/PR for B6 linking. */
 	ticketKey: string;
 	/** One entry per repo the run touches (single by default; N for multi-repo). */
@@ -114,6 +126,16 @@ export async function dispatchTicketRun(options: {
 	const { db, retrieve, input, createWorkspace } = options;
 	const now = options.now ?? Date.now;
 
+	// W7-M4: the source-tagged id stored on each run row, which the PR-loop
+	// reconciler parses to route writeback to the active source. Validate it
+	// up-front (resolve via the unified-layer parser) so a malformed id fails
+	// before any run row is inserted. Absent → bare cloud task id (legacy/cloud
+	// path, unchanged).
+	if (input.unifiedId !== undefined) {
+		parseUnifiedTicketId(input.unifiedId);
+	}
+	const writebackHandle = input.unifiedId ?? input.taskId;
+
 	// (a) The approved context is mandatory — it is the authoritative top layer.
 	const approvedContext = readApprovedContext(db, {
 		projectId: input.approvedContextProjectId,
@@ -155,7 +177,9 @@ export async function dispatchTicketRun(options: {
 		db.insert(ticketRuns)
 			.values({
 				id: runId,
-				taskId: input.taskId,
+				// Source-tagged writeback handle (W7-M4): the unifiedId when provided,
+				// else the bare cloud task id (legacy/cloud, unchanged).
+				taskId: writebackHandle,
 				projectId: repo.projectId,
 				status: "dispatching",
 				createdAt: insertedAt,

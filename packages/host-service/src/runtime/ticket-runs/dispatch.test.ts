@@ -225,4 +225,46 @@ describe("dispatchTicketRun (B5 orchestrator lifecycle)", () => {
 		expect(capturedPrompt).toContain("Do NOT merge");
 		expect(capturedPrompt).not.toContain("gh pr merge --");
 	});
+
+	it("stores the source-tagged unifiedId on the run row when provided (W7-M4)", async () => {
+		// The approved context is keyed by `taskId` (unchanged); the run row carries
+		// the `unifiedId` so the PR-loop reconciler can route writeback by source.
+		seedApprovedContext(projectA, "approved work");
+		const result = await dispatchTicketRun({
+			db,
+			retrieve,
+			input: {
+				taskId,
+				unifiedId: "local:issue-123",
+				ticketKey: "ENG-7",
+				repos: [{ projectId: projectA }],
+				approvedContextProjectId: projectA,
+			},
+			createWorkspace: okCreate,
+		});
+
+		const row = runRow(result.runs[0]?.runId ?? "");
+		expect(row?.status).toBe("dispatched");
+		// The writeback handle stored is the unifiedId, NOT the bare approved-context key.
+		expect(row?.taskId).toBe("local:issue-123");
+	});
+
+	it("rejects a malformed unifiedId BEFORE inserting any run row (W7-M4)", async () => {
+		seedApprovedContext(projectA, "approved work");
+		await expect(
+			dispatchTicketRun({
+				db,
+				retrieve,
+				input: {
+					taskId,
+					unifiedId: "not-a-unified-id",
+					ticketKey: "ENG-8",
+					repos: [{ projectId: projectA }],
+					approvedContextProjectId: projectA,
+				},
+				createWorkspace: okCreate,
+			}),
+		).rejects.toThrow(/unified ticket id/i);
+		expect(db.select().from(ticketRuns).all().length).toBe(0);
+	});
 });
