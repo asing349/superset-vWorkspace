@@ -289,7 +289,7 @@ No cloud schema change; no new heavyweight dependencies (`@linear/sdk`, Octokit,
 
 ## Outcomes & Retrospective
 
-**Wave complete — 2026-06-26.** All five milestones shipped on `claude/keen-euler-e9b3x8` (M1 `9afb9f1c16`, M2 `aa8c1ae2fe`, M3 `33adb6fcd7`, M4 `8b97419b5f`, M5 `<this commit>`). The Purpose is met end-to-end:
+**Wave complete — 2026-06-26.** All five milestones shipped on `claude/keen-euler-e9b3x8` (M1 `9afb9f1c16`, M2 `aa8c1ae2fe`, M3 `33adb6fcd7`, M4 `8b97419b5f`, M5 `06af488712`). The Purpose is met end-to-end:
 
 - **One-button local PKCE connect under cloud-precedence — delivered.** `linear.auth.*` runs a host-side PKCE flow (no client secret), captures the redirect on a loopback listener, and stores access+refresh tokens **encrypted host-local** (`linear_local_auth`, migration 0015). The "Connect Linear (this Mac)" button is **disabled-with-explainer** while a cloud Linear connection is active — enforced BOTH in the host gate (`startConnect` refuses) and the UI (`deriveLocalConnectAffordance`). Local connect works offline / in local-only Docker dev because an unreachable cloud counts as "not connected" (M1).
 - **Source-agnostic ticket list + ticket→PR — delivered.** A top-level `tickets.*` layer resolves THE SINGLE ACTIVE SOURCE at read time under cloud-precedence (M3), normalizing cloud `tasks` and the host-local Linear cache into one `UnifiedTicket` tagged `source` + `unifiedId`. The renderer `IntegrationTickets` panel badges each row and shows the active source; the wave-4 ticket→PR pipeline carries the `unifiedId` and runs identically regardless of source (M4). M5 closed M4's deferral: a `local:` ticket launches to a PR directly from the unified list (`LocalTicketRunPanel` → reused `TicketRunLauncher`).
