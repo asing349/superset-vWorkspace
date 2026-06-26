@@ -8,6 +8,7 @@ import * as schema from "../../db/schema";
 import { projects, prReviewFindings } from "../../db/schema";
 import {
 	getCurrentFindings,
+	markFindingPosted,
 	markFindingsStaleOnHeadChange,
 	putFindings,
 } from "./findings-cache";
@@ -135,6 +136,125 @@ describe("findings-cache: putFindings / getCurrentFindings", () => {
 		expect(getCurrentFindings({ db, projectId, prNumber: 5 })?.stale).toBe(
 			false,
 		);
+	});
+});
+
+describe("findings-cache: markFindingPosted", () => {
+	let db: HostDb;
+	const projectId = "proj-1";
+
+	beforeEach(() => {
+		db = buildDb();
+		db.insert(projects).values({ id: projectId, repoPath: "/tmp/p" }).run();
+	});
+
+	afterEach(() => {
+		(db as unknown as { $client?: { close: () => void } }).$client?.close();
+	});
+
+	it("flips ONLY the named finding to posted and re-persists the blob", () => {
+		const report = makeReport({
+			findings: [
+				makeFinding({ id: "f-1" }),
+				makeFinding({ id: "f-2", anchor: { file: "src/b.ts", line: 9 } }),
+			],
+		});
+		putFindings({ db, projectId, prNumber: 5, headSha: "sha-aaa", report });
+
+		const result = markFindingPosted({
+			db,
+			projectId,
+			prNumber: 5,
+			findingId: "f-2",
+		});
+
+		expect(result?.report.findings.find((f) => f.id === "f-2")?.state).toBe(
+			"posted",
+		);
+		// The other finding is untouched.
+		expect(result?.report.findings.find((f) => f.id === "f-1")?.state).toBe(
+			"open",
+		);
+		// The persisted blob reflects the flip (single source of truth).
+		expect(
+			getCurrentFindings({ db, projectId, prNumber: 5 })?.report.findings.find(
+				(f) => f.id === "f-2",
+			)?.state,
+		).toBe("posted");
+	});
+
+	it("PRESERVES the stale flag — posting a comment must not un-stale a report", () => {
+		const report = makeReport({ headSha: "old-sha" });
+		putFindings({ db, projectId, prNumber: 5, headSha: "old-sha", report });
+		markFindingsStaleOnHeadChange({
+			db,
+			projectId,
+			prNumber: 5,
+			newHeadSha: "new-sha",
+		});
+		expect(getCurrentFindings({ db, projectId, prNumber: 5 })?.stale).toBe(
+			true,
+		);
+
+		const result = markFindingPosted({
+			db,
+			projectId,
+			prNumber: 5,
+			findingId: "f-1",
+		});
+
+		// Finding flipped, but the report stays stale + at its original head SHA.
+		expect(result?.report.findings[0]?.state).toBe("posted");
+		expect(result?.stale).toBe(true);
+		expect(result?.headSha).toBe("old-sha");
+		const current = getCurrentFindings({ db, projectId, prNumber: 5 });
+		expect(current?.stale).toBe(true);
+		expect(current?.headSha).toBe("old-sha");
+	});
+
+	it("is idempotent for an already-posted finding (no further change)", () => {
+		const report = makeReport({
+			findings: [makeFinding({ id: "f-1", state: "posted" })],
+		});
+		putFindings({ db, projectId, prNumber: 5, headSha: "sha-aaa", report });
+		const before = db.select().from(prReviewFindings).get();
+
+		const result = markFindingPosted({
+			db,
+			projectId,
+			prNumber: 5,
+			findingId: "f-1",
+		});
+
+		expect(result?.report.findings[0]?.state).toBe("posted");
+		// No-op: the stored blob is byte-identical (no needless rewrite).
+		expect(db.select().from(prReviewFindings).get()?.findingsJson).toBe(
+			before?.findingsJson,
+		);
+	});
+
+	it("leaves the report untouched for an unknown findingId", () => {
+		const report = makeReport();
+		putFindings({ db, projectId, prNumber: 5, headSha: "sha-aaa", report });
+
+		const result = markFindingPosted({
+			db,
+			projectId,
+			prNumber: 5,
+			findingId: "does-not-exist",
+		});
+
+		expect(result?.report.findings[0]?.state).toBe("open");
+		expect(
+			getCurrentFindings({ db, projectId, prNumber: 5 })?.report.findings[0]
+				?.state,
+		).toBe("open");
+	});
+
+	it("returns null when no review has been run for the PR", () => {
+		expect(
+			markFindingPosted({ db, projectId, prNumber: 404, findingId: "f-1" }),
+		).toBeNull();
 	});
 });
 

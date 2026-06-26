@@ -5,6 +5,7 @@ import {
 	generateGuide,
 	getCachedFindings,
 	getCachedGuide,
+	markFindingPosted,
 	type PrReviewGuide,
 	reviewPr,
 } from "../../../runtime/pr-review/index";
@@ -191,6 +192,38 @@ export const prReviewRouter = router({
 					projectId: input.projectId,
 					prNumber: input.prNumber,
 				});
+			},
+		),
+
+	/**
+	 * Flip ONE finding's `state` to `posted` after its comment has been posted to
+	 * GitHub (Wave 6, M3). The renderer calls this RIGHT AFTER a successful
+	 * `github.createReviewComment`, so the persisted findings blob records that the
+	 * finding was posted (the "posted" badge + double-post guard read this state).
+	 *
+	 * It re-persists ONLY the matching finding's `state` inside the existing
+	 * `findings_json` blob (no schema change — Assumption A5) and PRESERVES the
+	 * report's `stale` flag (posting a comment must not un-stale a report).
+	 * Idempotent: an already-`posted` finding is a no-op. Returns `{ report, stale }`
+	 * (the same shape as `getCachedFindings`), or `null` when no review exists.
+	 */
+	markFindingPosted: protectedProcedure
+		.input(
+			z.object({
+				projectId: z.string().min(1),
+				prNumber: z.number().int().positive(),
+				findingId: z.string().min(1),
+			}),
+		)
+		.mutation(
+			({ ctx, input }): { report: FindingsReport; stale: boolean } | null => {
+				const result = markFindingPosted({
+					db: ctx.db,
+					projectId: input.projectId,
+					prNumber: input.prNumber,
+					findingId: input.findingId,
+				});
+				return result ? { report: result.report, stale: result.stale } : null;
 			},
 		),
 });

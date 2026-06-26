@@ -23,6 +23,7 @@ export {
 } from "./enrich-guide.ts";
 export {
 	getCurrentFindings,
+	markFindingPosted,
 	markFindingsStaleOnHeadChange,
 	putFindings,
 } from "./findings-cache.ts";

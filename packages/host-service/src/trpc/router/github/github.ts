@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../../index";
+import { postReviewComment } from "./post-review-comment";
 
 export const githubRouter = router({
 	getPRStatus: protectedProcedure
@@ -149,5 +150,44 @@ export const githubRouter = router({
 				merge_method: input.mergeMethod,
 			});
 			return data;
+		}),
+
+	/**
+	 * Post a single PR review comment (Wave 6, M3) — the ONE new GitHub WRITE
+	 * surface beyond wave-5's read-only core, added as an explicit, opt-in,
+	 * per-action user write under the already-write-scoped token (Decision Log /
+	 * Assumption A4). The renderer calls this ONLY from a per-finding "Post
+	 * comment" click — never autonomously, never in bulk. The body is redacted in
+	 * {@link postReviewComment} before any egress.
+	 *
+	 * An inline diff comment is posted when `path` + `line` are present (M1's
+	 * anti-hallucination guard makes that anchor safe); otherwise it falls back to
+	 * a top-level PR review comment. Returns `{ id, htmlUrl, inline }` so the
+	 * renderer can confirm success and link to the created comment.
+	 */
+	createReviewComment: protectedProcedure
+		.input(
+			z.object({
+				owner: z.string().min(1),
+				repo: z.string().min(1),
+				pullNumber: z.number().int().positive(),
+				commitId: z.string().min(1),
+				body: z.string().min(1),
+				path: z.string().min(1).optional(),
+				line: z.number().int().positive().optional(),
+			}),
+		)
+		.mutation(async ({ ctx, input }) => {
+			const octokit = await ctx.github();
+			return postReviewComment({
+				octokit,
+				owner: input.owner,
+				repo: input.repo,
+				pullNumber: input.pullNumber,
+				commitId: input.commitId,
+				body: input.body,
+				path: input.path,
+				line: input.line,
+			});
 		}),
 });

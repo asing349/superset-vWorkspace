@@ -1,5 +1,5 @@
 import type { RendererContext } from "@superset/panes";
-import { useCallback } from "react";
+import { useCallback, useMemo } from "react";
 import { electronTrpc } from "renderer/lib/electron-trpc";
 import type { PaneViewerData, PrReviewPaneData } from "../../../../types";
 import { FindingsTab } from "./components/FindingsTab";
@@ -9,6 +9,7 @@ import { PrReviewHeader } from "./components/PrReviewHeader";
 import { useGenerateGuide } from "./hooks/useGenerateGuide";
 import { useReviewPr } from "./hooks/useReviewPr";
 import type { GuideAnchor } from "./types";
+import { parsePrTarget } from "./utils/parsePrTarget";
 import { type PrReviewSection, resolvePrReviewSection } from "./utils/sections";
 
 interface PrReviewPaneProps {
@@ -75,6 +76,11 @@ export function PrReviewPane({ context, projectId }: PrReviewPaneProps) {
 	);
 	const prRow = (prListQuery.data ?? []).find((pr) => pr.prNumber === prNumber);
 
+	// GitHub coordinates for the M3 "Post comment" action, derived from the PR's
+	// html URL (the same row the header links to). Null until the row loads or for
+	// a non-GitHub URL — the Findings tab then disables posting.
+	const commentTarget = useMemo(() => parsePrTarget(prRow?.url), [prRow?.url]);
+
 	const guideState = useGenerateGuide({ projectId, prNumber });
 	// Cache-first read of any prior review (button-only mutation lives inside).
 	// Mounting/reading NEVER reviews — only the Findings tab's button does.
@@ -101,6 +107,9 @@ export function PrReviewPane({ context, projectId }: PrReviewPaneProps) {
 				) : section === "findings" ? (
 					<FindingsTab
 						reviewState={reviewState}
+						projectId={projectId}
+						prNumber={prNumber}
+						commentTarget={commentTarget}
 						onOpenAnchor={handleOpenAnchor}
 					/>
 				) : (

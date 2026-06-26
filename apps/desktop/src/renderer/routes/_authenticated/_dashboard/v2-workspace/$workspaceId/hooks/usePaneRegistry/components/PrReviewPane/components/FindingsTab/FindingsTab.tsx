@@ -1,11 +1,17 @@
 import { Button } from "@superset/ui/button";
 import { LuRefreshCw, LuShieldCheck } from "react-icons/lu";
+import { usePostFindingComment } from "../../hooks/usePostFindingComment";
 import type { UseReviewPrResult } from "../../hooks/useReviewPr";
 import type { FindingAnchor } from "../../types";
+import type { PrTarget } from "../../utils/parsePrTarget";
 import { FindingsSectionView } from "../FindingsSectionView";
 
 interface FindingsTabProps {
 	reviewState: UseReviewPrResult;
+	projectId: string;
+	prNumber: number;
+	/** The PR's GitHub coordinates (owner/repo) for posting comments; M3. */
+	commentTarget: PrTarget | null;
 	/** Jump a finding's anchor to the sibling Diff tab (M1). */
 	onOpenAnchor?: (anchor: FindingAnchor) => void;
 }
@@ -21,8 +27,26 @@ interface FindingsTabProps {
  * the cached findings are stale vs the PR's head SHA and is never auto-run.
  * Clicking a finding calls `onOpenAnchor` → the Diff tab scrolls to the file/line.
  */
-export function FindingsTab({ reviewState, onOpenAnchor }: FindingsTabProps) {
+export function FindingsTab({
+	reviewState,
+	projectId,
+	prNumber,
+	commentTarget,
+	onOpenAnchor,
+}: FindingsTabProps) {
 	const { report, isReviewing, isLoadingCached, isStale, review } = reviewState;
+
+	// The M3 per-finding comment-post flow. The commit anchor is the SHA the
+	// findings were reviewed against (`report.headSha`), so an inline comment
+	// lands on the exact code the finding describes. Hook is called
+	// unconditionally (rules of hooks); it stays disabled until a report + target
+	// are resolved.
+	const { postFinding, postingFindingId, canPost } = usePostFindingComment({
+		projectId,
+		prNumber,
+		target: commentTarget,
+		commitId: report?.headSha ?? null,
+	});
 
 	if (!report) {
 		// Cache-first (#9): while the read is still in flight, show a neutral
@@ -95,6 +119,9 @@ export function FindingsTab({ reviewState, onOpenAnchor }: FindingsTabProps) {
 					<FindingsSectionView
 						findings={report.findings}
 						onOpenAnchor={onOpenAnchor}
+						onPostComment={postFinding}
+						postingFindingId={postingFindingId}
+						canPost={canPost}
 					/>
 				) : (
 					<div className="flex h-full w-full cursor-text select-text items-center justify-center px-6 text-center text-sm text-muted-foreground">

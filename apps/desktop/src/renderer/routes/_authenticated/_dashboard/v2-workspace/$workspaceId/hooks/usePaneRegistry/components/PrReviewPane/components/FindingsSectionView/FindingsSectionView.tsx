@@ -1,4 +1,6 @@
+import { Button } from "@superset/ui/button";
 import { cn } from "@superset/ui/utils";
+import { LuCheck, LuMessageSquarePlus } from "react-icons/lu";
 import type { Finding, FindingAnchor } from "../../types";
 import { GuideItemLine } from "../GuideSectionView";
 
@@ -6,6 +8,16 @@ interface FindingsSectionViewProps {
 	findings: Finding[];
 	/** Jump a finding's anchor to the sibling Diff tab (M1 → resolveScrollTarget). */
 	onOpenAnchor?: (anchor: FindingAnchor) => void;
+	/**
+	 * Post ONE finding to the PR as a review comment (Wave 6, M3) — an explicit,
+	 * per-finding click. Omit it to hide the post UI entirely (e.g. read-only
+	 * contexts). Never bulk: there is no "post all".
+	 */
+	onPostComment?: (finding: Finding) => void;
+	/** The id of the finding currently being posted (its button shows pending). */
+	postingFindingId?: string | null;
+	/** Whether posting is possible right now (PR coordinates + commit resolved). */
+	canPost?: boolean;
 }
 
 /** Severity render order — most severe first — and its section heading. */
@@ -40,6 +52,9 @@ const CATEGORY_LABEL: Record<Finding["category"], string> = {
 export function FindingsSectionView({
 	findings,
 	onOpenAnchor,
+	onPostComment,
+	postingFindingId,
+	canPost = true,
 }: FindingsSectionViewProps) {
 	const groups = SEVERITY_ORDER.map((severity) => ({
 		severity,
@@ -63,7 +78,7 @@ export function FindingsSectionView({
 								>
 									{CATEGORY_LABEL[finding.category]}
 								</span>
-								<div className="min-w-0 text-foreground">
+								<div className="min-w-0 flex-1 text-foreground">
 									<GuideItemLine
 										item={{
 											text: finding.rationale,
@@ -74,12 +89,72 @@ export function FindingsSectionView({
 										}}
 										onOpenAnchor={onOpenAnchor}
 									/>
+									{onPostComment ? (
+										<FindingPostAction
+											finding={finding}
+											onPostComment={onPostComment}
+											isPosting={postingFindingId === finding.id}
+											canPost={canPost}
+										/>
+									) : null}
 								</div>
 							</li>
 						))}
 					</ul>
 				</section>
 			))}
+		</div>
+	);
+}
+
+/**
+ * The per-finding "Post comment" control (Wave 6, M3). Explicit, per-finding,
+ * opt-in — there is no "post all". A finding's `posted` state drives the
+ * double-post guard: once posted it shows a "Posted" badge and the button
+ * becomes a quieter "Post again" so a re-post takes a second, deliberate click.
+ */
+function FindingPostAction({
+	finding,
+	onPostComment,
+	isPosting,
+	canPost,
+}: {
+	finding: Finding;
+	onPostComment: (finding: Finding) => void;
+	isPosting: boolean;
+	canPost: boolean;
+}) {
+	const posted = finding.state === "posted";
+	return (
+		<div className="mt-1 flex items-center gap-2">
+			{posted ? (
+				<>
+					<span className="inline-flex items-center gap-1 rounded bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-medium text-emerald-600">
+						<LuCheck className="size-3" />
+						Posted
+					</span>
+					<Button
+						size="xs"
+						variant="ghost"
+						className="h-auto px-1.5 py-0.5 text-[11px] text-muted-foreground"
+						disabled={!canPost || isPosting}
+						onClick={() => onPostComment(finding)}
+					>
+						{isPosting ? "Posting…" : "Post again"}
+					</Button>
+				</>
+			) : (
+				<Button
+					size="xs"
+					variant="secondary"
+					className="h-auto px-2 py-0.5 text-[11px]"
+					disabled={!canPost || isPosting}
+					onClick={() => onPostComment(finding)}
+				>
+					<LuMessageSquarePlus className="size-3" />
+					{isPosting ? "Posting…" : "Post comment"}
+				</Button>
+			)}
 		</div>
 	);
 }

@@ -117,6 +117,75 @@ export function getCurrentFindings({
 }
 
 /**
+ * Flip a SINGLE finding's `state` to `posted` in the current cached report for
+ * `(projectId, prNumber)` (Wave 6, M3) — what the per-finding "Post comment"
+ * flow calls once its comment lands on GitHub. It mutates ONLY that finding's
+ * `state` inside the existing `findings_json` blob (no schema change, per
+ * Assumption A5) and deliberately PRESERVES the row's `stale` flag and head SHA
+ * (unlike {@link putFindings}, which resets `stale` — posting a comment must not
+ * un-stale a report whose head advanced).
+ *
+ * Idempotent: a finding already `posted` (or a missing `findingId`) leaves the
+ * row untouched and returns the current report unchanged. Returns `null` only
+ * when no review has been run for the PR yet.
+ */
+export function markFindingPosted({
+	db,
+	projectId,
+	prNumber,
+	findingId,
+}: {
+	db: HostDb;
+	projectId: string;
+	prNumber: number;
+	findingId: string;
+}): { report: FindingsReport; headSha: string; stale: boolean } | null {
+	const row = db
+		.select({
+			id: prReviewFindings.id,
+			findingsJson: prReviewFindings.findingsJson,
+			headSha: prReviewFindings.headSha,
+			stale: prReviewFindings.stale,
+		})
+		.from(prReviewFindings)
+		.where(
+			and(
+				eq(prReviewFindings.projectId, projectId),
+				eq(prReviewFindings.prNumber, prNumber),
+			),
+		)
+		// The newest write is the "current" report for the PR (same as the read).
+		.orderBy(desc(prReviewFindings.updatedAt))
+		.get();
+
+	if (!row) return null;
+
+	const report = JSON.parse(row.findingsJson) as FindingsReport;
+	let changed = false;
+	const findings = report.findings.map((finding) => {
+		if (finding.id === findingId && finding.state !== "posted") {
+			changed = true;
+			return { ...finding, state: "posted" as const };
+		}
+		return finding;
+	});
+
+	// Already posted / unknown id → no-op (idempotent), return the report as-is.
+	if (!changed) {
+		return { report, headSha: row.headSha, stale: row.stale };
+	}
+
+	const updated: FindingsReport = { ...report, findings };
+	db.update(prReviewFindings)
+		// `stale` + `headSha` are intentionally untouched — only the blob changes.
+		.set({ findingsJson: JSON.stringify(updated), updatedAt: Date.now() })
+		.where(eq(prReviewFindings.id, row.id))
+		.run();
+
+	return { report: updated, headSha: row.headSha, stale: row.stale };
+}
+
+/**
  * Mark every cached findings row for `(projectId, prNumber)` whose head SHA
  * differs from `newHeadSha` as `stale`. Called when a PR's head advances (a new
  * commit). It does EXACTLY ONE thing — flip the flag — and triggers NO re-review:
