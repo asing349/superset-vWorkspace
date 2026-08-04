@@ -64,7 +64,12 @@ export interface CreatedWorkspace {
 export type CreateWorkspaceFn = (args: {
 	projectId: string;
 	baseBranch?: string;
-	taskId: string;
+	/**
+	 * The CLOUD task id to link the new workspace to, or `undefined` when the run
+	 * has no cloud task. This is NOT the writeback handle — see `cloudTaskId` in
+	 * `dispatchTicketRun`.
+	 */
+	taskId?: string;
 	prompt: string;
 }) => Promise<CreatedWorkspace>;
 
@@ -131,8 +136,18 @@ export async function dispatchTicketRun(options: {
 	// up-front (resolve via the unified-layer parser) so a malformed id fails
 	// before any run row is inserted. Absent → bare cloud task id (legacy/cloud
 	// path, unchanged).
+	//
+	// Note the SECOND, distinct id resolved here: `workspaces.create({ taskId })`
+	// writes the CLOUD `v2_workspaces.task_id` column, which is a
+	// `uuid REFERENCES tasks(id)`. Only a cloud ticket has such a row — a local
+	// Linear issue id has none, so forwarding the source-tagged `local:<issueId>`
+	// handle there fails `z.string().uuid()` (and would fail the FK besides),
+	// dropping the whole run to `failed` before any worktree is created. Resolve
+	// the cloud link from the SOURCE: cloud → the cloud task id; local → none.
+	let cloudTaskId: string | undefined = input.taskId;
 	if (input.unifiedId !== undefined) {
-		parseUnifiedTicketId(input.unifiedId);
+		const { source, sourceId } = parseUnifiedTicketId(input.unifiedId);
+		cloudTaskId = source === "cloud" ? sourceId : undefined;
 	}
 	const writebackHandle = input.unifiedId ?? input.taskId;
 
@@ -191,7 +206,7 @@ export async function dispatchTicketRun(options: {
 			const created = await createWorkspace({
 				projectId: repo.projectId,
 				baseBranch: repo.baseBranch,
-				taskId: input.taskId,
+				taskId: cloudTaskId,
 				prompt,
 			});
 

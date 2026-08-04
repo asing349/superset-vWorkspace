@@ -48,9 +48,15 @@ describe("dispatchTicketRun (B5 orchestrator lifecycle)", () => {
 		(db as unknown as { $client?: { close: () => void } }).$client?.close();
 	});
 
-	function seedApprovedContext(projectId: string, content: string) {
+	function seedApprovedContext(
+		projectId: string,
+		content: string,
+		// The store key. Defaults to the cloud `tasks.id`; a local run keys the
+		// context under its source-tagged `unifiedId` instead.
+		key: string = taskId,
+	) {
 		db.insert(approvedTicketContext)
-			.values({ id: crypto.randomUUID(), projectId, taskId, content })
+			.values({ id: crypto.randomUUID(), projectId, taskId: key, content })
 			.run();
 	}
 
@@ -247,6 +253,104 @@ describe("dispatchTicketRun (B5 orchestrator lifecycle)", () => {
 		expect(row?.status).toBe("dispatched");
 		// The writeback handle stored is the unifiedId, NOT the bare approved-context key.
 		expect(row?.taskId).toBe("local:issue-123");
+	});
+
+	// `workspaces.create({ taskId })` writes the CLOUD `v2_workspaces.task_id`
+	// column (`uuid REFERENCES tasks(id)`), so it rejects anything non-UUID. This
+	// fake mirrors that contract — `okCreate` ignores `taskId` and so cannot catch
+	// a source-tagged handle leaking into the cloud link.
+	const uuidOnlyCreate: CreateWorkspaceFn = async (args) => {
+		if (
+			args.taskId !== undefined &&
+			!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+				args.taskId,
+			)
+		) {
+			throw new Error(`Invalid UUID: ${args.taskId}`);
+		}
+		return { workspaceId: `ws-${args.projectId}`, branch: "feat/x" };
+	};
+
+	it("does NOT forward a local unifiedId as the cloud task link (W7-M5)", async () => {
+		// A local Linear issue has no cloud `tasks` row, so the cloud link must be
+		// absent. Forwarding `local:<issueId>` here failed the UUID contract and
+		// dropped the whole run to `failed` before any worktree was created.
+		seedApprovedContext(
+			projectA,
+			"approved work",
+			"local:9f1c2b6e-0000-4000-8000-aaaaaaaaaaaa",
+		);
+		const capturedTaskIds: (string | undefined)[] = [];
+		const result = await dispatchTicketRun({
+			db,
+			retrieve,
+			input: {
+				taskId: "local:9f1c2b6e-0000-4000-8000-aaaaaaaaaaaa",
+				unifiedId: "local:9f1c2b6e-0000-4000-8000-aaaaaaaaaaaa",
+				ticketKey: "ENG-9",
+				repos: [{ projectId: projectA }],
+				approvedContextProjectId: projectA,
+			},
+			createWorkspace: async (args) => {
+				capturedTaskIds.push(args.taskId);
+				return uuidOnlyCreate(args);
+			},
+		});
+
+		expect(capturedTaskIds).toEqual([undefined]);
+		expect(result.runs[0]?.status).toBe("dispatched");
+		expect(result.runs[0]?.error ?? null).toBeNull();
+		// The writeback handle is unaffected — it still routes to the local source.
+		expect(runRow(result.runs[0]?.runId ?? "")?.taskId).toBe(
+			"local:9f1c2b6e-0000-4000-8000-aaaaaaaaaaaa",
+		);
+	});
+
+	it("forwards the bare cloud task id as the cloud task link (W7-M5)", async () => {
+		seedApprovedContext(projectA, "approved work");
+		const capturedTaskIds: (string | undefined)[] = [];
+		const result = await dispatchTicketRun({
+			db,
+			retrieve,
+			input: {
+				taskId,
+				unifiedId: `cloud:${taskId}`,
+				ticketKey: "ENG-10",
+				repos: [{ projectId: projectA }],
+				approvedContextProjectId: projectA,
+			},
+			createWorkspace: async (args) => {
+				capturedTaskIds.push(args.taskId);
+				return uuidOnlyCreate(args);
+			},
+		});
+
+		expect(capturedTaskIds).toEqual([taskId]);
+		expect(result.runs[0]?.status).toBe("dispatched");
+		expect(runRow(result.runs[0]?.runId ?? "")?.taskId).toBe(`cloud:${taskId}`);
+	});
+
+	it("forwards the bare taskId when no unifiedId is given (legacy cloud path)", async () => {
+		seedApprovedContext(projectA, "approved work");
+		const capturedTaskIds: (string | undefined)[] = [];
+		const result = await dispatchTicketRun({
+			db,
+			retrieve,
+			input: {
+				taskId,
+				ticketKey: "ENG-11",
+				repos: [{ projectId: projectA }],
+				approvedContextProjectId: projectA,
+			},
+			createWorkspace: async (args) => {
+				capturedTaskIds.push(args.taskId);
+				return uuidOnlyCreate(args);
+			},
+		});
+
+		expect(capturedTaskIds).toEqual([taskId]);
+		expect(result.runs[0]?.status).toBe("dispatched");
+		expect(runRow(result.runs[0]?.runId ?? "")?.taskId).toBe(taskId);
 	});
 
 	it("rejects a malformed unifiedId BEFORE inserting any run row (W7-M4)", async () => {

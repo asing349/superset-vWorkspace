@@ -53,8 +53,9 @@ const startInputSchema = z.object({
  * Wrap the host `workspaces.create` new-branch-from-base path as the injected
  * worktree+agent launcher. Reuses the existing create procedure wholesale (the
  * worktree + `agents:[{ agent:"claude", prompt }]` launch), so NO new git/clone
- * code is written here. `taskId` is the cloud task UUID; `ticketKey` lives in
- * the prompt only.
+ * code is written here. `taskId` is the cloud task UUID and is ABSENT for a
+ * local-sourced run (no cloud `tasks` row to link to); `ticketKey` lives in the
+ * prompt only.
  */
 function makeCreateWorkspace(ctx: HostServiceContext): CreateWorkspaceFn {
 	const caller = workspacesRouter.createCaller(ctx);
