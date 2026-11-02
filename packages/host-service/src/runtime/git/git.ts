@@ -5,11 +5,11 @@ import { getRemoteUrl } from "./utils";
 export function createGitFactory(provider: GitCredentialProvider): GitFactory {
 	return async (repoPath: string) => {
 		const initialCredentials = await provider.getCredentials(null);
-		const git = createUserSimpleGit(repoPath).env(initialCredentials.env);
+		const git = createUserSimpleGit(repoPath, initialCredentials.env);
 		const remoteUrl = await getRemoteUrl(git);
 		const credentials = await provider.getCredentials(remoteUrl);
 
-		return git.env({
+		return createUserSimpleGit(repoPath, {
 			...initialCredentials.env,
 			...credentials.env,
 			GIT_OPTIONAL_LOCKS: "0",

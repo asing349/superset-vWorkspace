@@ -29,6 +29,7 @@ import type {
 	SelectWorkspace,
 } from "@superset/db/schema";
 import type { AppRouter as HostServiceAppRouter } from "@superset/host-service";
+import { INPUT_LIMITS } from "@superset/shared/input-limits";
 import type { AppRouter } from "@superset/trpc";
 import { BasicIndex } from "@tanstack/db";
 import { electricCollectionOptions } from "@tanstack/electric-db-collection";
@@ -230,6 +231,8 @@ function getCollectionsCacheKey(organizationId: string): string {
 const apiClient = createTRPCProxyClient<AppRouter>({
 	links: [
 		httpBatchLink({
+			maxItems: INPUT_LIMITS.batchCalls,
+			maxURLLength: INPUT_LIMITS.urlBytes - 4096,
 			url: `${env.NEXT_PUBLIC_API_URL}/api/trpc`,
 			headers: () => {
 				const token = getAuthToken();

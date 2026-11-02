@@ -131,6 +131,18 @@
 		"./rrule": {
 			"types": "./src/rrule.ts",
 			"default": "./src/rrule.ts"
+		},
+		"./input-limits": {
+			"types": "./src/input-limits.ts",
+			"default": "./src/input-limits.ts"
+		},
+		"./request-limits": {
+			"types": "./src/request-limits.ts",
+			"default": "./src/request-limits.ts"
+		},
+		"./limited-file": {
+			"types": "./src/limited-file.ts",
+			"default": "./src/limited-file.ts"
 		}
 	},
 	"scripts": {

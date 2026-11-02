@@ -1,3 +1,4 @@
+import { INPUT_LIMITS } from "@superset/shared/input-limits";
 import { z } from "zod";
 import { protectedProcedure, router } from "../../index";
 
@@ -25,6 +26,7 @@ const sendMessagePayloadSchema = z.object({
 				filename: z.string().optional(),
 			}),
 		)
+		.max(INPUT_LIMITS.files)
 		.optional(),
 });
 

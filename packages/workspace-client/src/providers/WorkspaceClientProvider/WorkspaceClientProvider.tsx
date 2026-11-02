@@ -1,5 +1,6 @@
+import { INPUT_LIMITS } from "@superset/shared/input-limits";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { httpBatchStreamLink, TRPCClientError } from "@trpc/client";
+import { httpBatchStreamLink, splitLink, TRPCClientError } from "@trpc/client";
 import { createContext, type ReactNode, useContext } from "react";
 import superjson from "superjson";
 import { workspaceTrpc } from "../../workspace-trpc";
@@ -75,10 +76,25 @@ function getWorkspaceClients(
 
 	const trpcClient = workspaceTrpc.createClient({
 		links: [
-			httpBatchStreamLink({
-				url: `${hostUrl}/trpc`,
-				transformer: superjson,
-				headers: headers ?? (() => ({})),
+			splitLink({
+				condition: ({ path }) =>
+					/(?:^|\.)(?:attachments\.upload|sendMessage|restartFromMessage)$/.test(
+						path,
+					),
+				true: httpBatchStreamLink({
+					url: `${hostUrl}/trpc`,
+					transformer: superjson,
+					headers: headers ?? (() => ({})),
+					maxItems: 1,
+					maxURLLength: INPUT_LIMITS.urlBytes - 4096,
+				}),
+				false: httpBatchStreamLink({
+					url: `${hostUrl}/trpc`,
+					transformer: superjson,
+					headers: headers ?? (() => ({})),
+					maxItems: INPUT_LIMITS.batchCalls,
+					maxURLLength: INPUT_LIMITS.urlBytes - 4096,
+				}),
 			}),
 		],
 	});

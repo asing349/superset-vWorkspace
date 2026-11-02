@@ -1,4 +1,8 @@
-import { initTRPC } from "@trpc/server";
+import {
+	assertInputWithinLimits,
+	InputLimitError,
+} from "@superset/shared/input-limits";
+import { initTRPC, TRPCError } from "@trpc/server";
 import superjson from "superjson";
 import { z } from "zod";
 import type { ChatService } from "../chat-service";
@@ -7,6 +11,20 @@ import { searchFiles } from "./file-search";
 import { getMcpOverview } from "./mcp-overview";
 
 const t = initTRPC.create({ transformer: superjson });
+const procedure = t.procedure.use(async ({ getRawInput, next }) => {
+	const raw = await getRawInput();
+	try {
+		assertInputWithinLimits(raw);
+	} catch (error) {
+		if (error instanceof InputLimitError)
+			throw new TRPCError({
+				code: "PAYLOAD_TOO_LARGE",
+				message: error.message,
+			});
+		throw error;
+	}
+	return next();
+});
 
 export const searchFilesInput = z.object({
 	rootPath: z.string(),
@@ -56,7 +74,7 @@ function resolveWorkspaceSlashCommand(input: { cwd: string; text: string }) {
 export function createChatServiceRouter(service: ChatService) {
 	return t.router({
 		workspace: t.router({
-			searchFiles: t.procedure
+			searchFiles: procedure
 				.input(searchFilesInput)
 				.query(async ({ input }) => {
 					return searchFiles({
@@ -67,25 +85,25 @@ export function createChatServiceRouter(service: ChatService) {
 					});
 				}),
 
-			getSlashCommands: t.procedure
+			getSlashCommands: procedure
 				.input(getSlashCommandsInput)
 				.query(async ({ input }) => {
 					return getSlashCommands(input.cwd);
 				}),
 
-			getMcpOverview: t.procedure
+			getMcpOverview: procedure
 				.input(getMcpOverviewInput)
 				.query(async ({ input }) => {
 					return getMcpOverview(input.cwd);
 				}),
 
-			resolveSlashCommand: t.procedure
+			resolveSlashCommand: procedure
 				.input(resolveSlashCommandInput)
 				.mutation(async ({ input }) => {
 					return resolveWorkspaceSlashCommand(input);
 				}),
 
-			previewSlashCommand: t.procedure
+			previewSlashCommand: procedure
 				.input(resolveSlashCommandInput)
 				.query(async ({ input }) => {
 					return resolveWorkspaceSlashCommand(input);
@@ -93,70 +111,70 @@ export function createChatServiceRouter(service: ChatService) {
 		}),
 
 		auth: t.router({
-			getAnthropicStatus: t.procedure.query(() => {
+			getAnthropicStatus: procedure.query(() => {
 				return service.getAnthropicAuthStatus();
 			}),
-			getOpenAIStatus: t.procedure.query(() => {
+			getOpenAIStatus: procedure.query(() => {
 				return service.getOpenAIAuthStatus();
 			}),
-			startOpenAIOAuth: t.procedure.mutation(() => {
+			startOpenAIOAuth: procedure.mutation(() => {
 				return service.startOpenAIOAuth();
 			}),
-			completeOpenAIOAuth: t.procedure
+			completeOpenAIOAuth: procedure
 				.input(openAIOAuthCodeInput)
 				.mutation(async ({ input }) => {
 					return service.completeOpenAIOAuth({ code: input.code });
 				}),
-			cancelOpenAIOAuth: t.procedure.mutation(() => {
+			cancelOpenAIOAuth: procedure.mutation(() => {
 				return service.cancelOpenAIOAuth();
 			}),
-			consumeOpenAIOAuthCallback: t.procedure.query(() => {
+			consumeOpenAIOAuthCallback: procedure.query(() => {
 				return service.consumeOpenAIOAuthCallback();
 			}),
-			disconnectOpenAIOAuth: t.procedure.mutation(() => {
+			disconnectOpenAIOAuth: procedure.mutation(() => {
 				return service.disconnectOpenAIOAuth();
 			}),
-			startAnthropicOAuth: t.procedure.mutation(() => {
+			startAnthropicOAuth: procedure.mutation(() => {
 				return service.startAnthropicOAuth();
 			}),
-			completeAnthropicOAuth: t.procedure
+			completeAnthropicOAuth: procedure
 				.input(anthropicOAuthCodeInput)
 				.mutation(async ({ input }) => {
 					return service.completeAnthropicOAuth({ code: input.code });
 				}),
-			cancelAnthropicOAuth: t.procedure.mutation(() => {
+			cancelAnthropicOAuth: procedure.mutation(() => {
 				return service.cancelAnthropicOAuth();
 			}),
-			disconnectAnthropicOAuth: t.procedure.mutation(() => {
+			disconnectAnthropicOAuth: procedure.mutation(() => {
 				return service.disconnectAnthropicOAuth();
 			}),
-			setAnthropicApiKey: t.procedure
+			setAnthropicApiKey: procedure
 				.input(anthropicApiKeyInput)
 				.mutation(({ input }) => {
 					return service.setAnthropicApiKey({ apiKey: input.apiKey });
 				}),
-			getAnthropicEnvConfig: t.procedure.query(() => {
+			getAnthropicEnvConfig: procedure.query(() => {
 				return service.getAnthropicEnvConfig();
 			}),
-			setAnthropicEnvConfig: t.procedure
+			setAnthropicEnvConfig: procedure
 				.input(anthropicEnvConfigInput)
 				.mutation(({ input }) => {
 					return service.setAnthropicEnvConfig({
 						envText: input.envText,
 					});
 				}),
-			clearAnthropicEnvConfig: t.procedure.mutation(() => {
+			clearAnthropicEnvConfig: procedure.mutation(() => {
 				return service.clearAnthropicEnvConfig();
 			}),
-			clearAnthropicApiKey: t.procedure.mutation(() => {
+			clearAnthropicApiKey: procedure.mutation(() => {
 				return service.clearAnthropicApiKey();
 			}),
-			setOpenAIApiKey: t.procedure
+			setOpenAIApiKey: procedure
 				.input(openAIApiKeyInput)
 				.mutation(({ input }) => {
 					return service.setOpenAIApiKey({ apiKey: input.apiKey });
 				}),
-			clearOpenAIApiKey: t.procedure.mutation(() => {
+			clearOpenAIApiKey: procedure.mutation(() => {
 				return service.clearOpenAIApiKey();
 			}),
 		}),

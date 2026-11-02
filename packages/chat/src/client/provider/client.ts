@@ -1,4 +1,5 @@
-import { httpBatchLink, type TRPCLink } from "@trpc/client";
+import { INPUT_LIMITS } from "@superset/shared/input-limits";
+import { httpBatchLink, splitLink, type TRPCLink } from "@trpc/client";
 import superjson from "superjson";
 import type { ChatRuntimeServiceRouter } from "../../server/trpc";
 import {
@@ -31,11 +32,25 @@ export function createChatRuntimeServiceHttpClient({
 }: CreateChatRuntimeServiceHttpClientOptions): ChatRuntimeServiceClient {
 	return createChatRuntimeServiceClient({
 		links: [
-			httpBatchLink({
-				url,
-				transformer: superjson,
-				headers,
-				...(fetch ? { fetch } : {}),
+			splitLink({
+				condition: ({ path }) =>
+					/(?:^|\.)(?:sendMessage|restartFromMessage)$/.test(path),
+				true: httpBatchLink({
+					url,
+					transformer: superjson,
+					headers,
+					...(fetch ? { fetch } : {}),
+					maxItems: 1,
+					maxURLLength: INPUT_LIMITS.urlBytes - 4096,
+				}),
+				false: httpBatchLink({
+					url,
+					transformer: superjson,
+					headers,
+					...(fetch ? { fetch } : {}),
+					maxItems: INPUT_LIMITS.batchCalls,
+					maxURLLength: INPUT_LIMITS.urlBytes - 4096,
+				}),
 			}),
 		],
 	});

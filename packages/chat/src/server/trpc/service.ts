@@ -1,7 +1,12 @@
 import { Memory } from "@mastra/memory";
+import {
+	assertInputWithinLimits,
+	INPUT_LIMITS,
+	InputLimitError,
+} from "@superset/shared/input-limits";
 import type { AppRouter } from "@superset/trpc";
 import { createTRPCClient, httpBatchLink } from "@trpc/client";
-import { initTRPC } from "@trpc/server";
+import { initTRPC, TRPCError } from "@trpc/server";
 import { createMastraCode } from "mastracode";
 import superjson from "superjson";
 import { searchFiles } from "./utils/file-search";
@@ -104,6 +109,8 @@ export class ChatRuntimeService {
 		this.apiClient = createTRPCClient<AppRouter>({
 			links: [
 				httpBatchLink({
+					maxItems: INPUT_LIMITS.batchCalls,
+					maxURLLength: INPUT_LIMITS.urlBytes - 4096,
 					url: `${opts.apiUrl}/api/trpc`,
 					transformer: superjson,
 					async headers() {
@@ -183,10 +190,24 @@ export class ChatRuntimeService {
 
 	createRouter() {
 		const t = initTRPC.create({ transformer: superjson });
+		const procedure = t.procedure.use(async ({ getRawInput, next }) => {
+			const raw = await getRawInput();
+			try {
+				assertInputWithinLimits(raw);
+			} catch (error) {
+				if (error instanceof InputLimitError)
+					throw new TRPCError({
+						code: "PAYLOAD_TOO_LARGE",
+						message: error.message,
+					});
+				throw error;
+			}
+			return next();
+		});
 
 		return t.router({
 			workspace: t.router({
-				searchFiles: t.procedure
+				searchFiles: procedure
 					.input(searchFilesInput)
 					.query(async ({ input }) => {
 						return searchFiles({
@@ -197,7 +218,7 @@ export class ChatRuntimeService {
 						});
 					}),
 
-				getMcpOverview: t.procedure
+				getMcpOverview: procedure
 					.input(mcpOverviewInput)
 					.query(async ({ input }) => {
 						if (!ENABLE_MASTRA_MCP_SERVERS) {
@@ -210,7 +231,7 @@ export class ChatRuntimeService {
 						);
 						return getRuntimeMcpOverview(runtime);
 					}),
-				authenticateMcpServer: t.procedure
+				authenticateMcpServer: procedure
 					.input(mcpServerAuthInput)
 					.mutation(async ({ input }) => {
 						if (!ENABLE_MASTRA_MCP_SERVERS) {
@@ -226,7 +247,7 @@ export class ChatRuntimeService {
 			}),
 
 			session: t.router({
-				getDisplayState: t.procedure
+				getDisplayState: procedure
 					.input(displayStateInput)
 					.query(async ({ input }) => {
 						const runtime = await this.getOrCreateRuntime(
@@ -277,7 +298,7 @@ export class ChatRuntimeService {
 						};
 					}),
 
-				listMessages: t.procedure
+				listMessages: procedure
 					.input(listMessagesInput)
 					.query(async ({ input }) => {
 						const runtime = await this.getOrCreateRuntime(
@@ -287,7 +308,7 @@ export class ChatRuntimeService {
 						return runtime.harness.listMessages();
 					}),
 
-				sendMessage: t.procedure
+				sendMessage: procedure
 					.input(sendMessageInput)
 					.mutation(async ({ input }) => {
 						const runtime = await this.getOrCreateRuntime(
@@ -319,7 +340,7 @@ export class ChatRuntimeService {
 						return runtime.harness.sendMessage(input.payload);
 					}),
 
-				restartFromMessage: t.procedure
+				restartFromMessage: procedure
 					.input(restartFromMessageInput)
 					.mutation(async ({ input }) => {
 						const runtime = await this.getOrCreateRuntime(
@@ -344,7 +365,7 @@ export class ChatRuntimeService {
 						});
 					}),
 
-				stop: t.procedure.input(sessionIdInput).mutation(async ({ input }) => {
+				stop: procedure.input(sessionIdInput).mutation(async ({ input }) => {
 					const runtime = await this.getOrCreateRuntime(
 						input.sessionId,
 						input.cwd,
@@ -352,7 +373,7 @@ export class ChatRuntimeService {
 					runtime.harness.abort();
 				}),
 
-				abort: t.procedure.input(sessionIdInput).mutation(async ({ input }) => {
+				abort: procedure.input(sessionIdInput).mutation(async ({ input }) => {
 					const runtime = await this.getOrCreateRuntime(
 						input.sessionId,
 						input.cwd,
@@ -361,7 +382,7 @@ export class ChatRuntimeService {
 				}),
 
 				approval: t.router({
-					respond: t.procedure
+					respond: procedure
 						.input(approvalRespondInput)
 						.mutation(async ({ input }) => {
 							const runtime = await this.getOrCreateRuntime(
@@ -373,7 +394,7 @@ export class ChatRuntimeService {
 				}),
 
 				question: t.router({
-					respond: t.procedure
+					respond: procedure
 						.input(questionRespondInput)
 						.mutation(async ({ input }) => {
 							const runtime = await this.getOrCreateRuntime(
@@ -388,7 +409,7 @@ export class ChatRuntimeService {
 				}),
 
 				plan: t.router({
-					respond: t.procedure
+					respond: procedure
 						.input(planRespondInput)
 						.mutation(async ({ input }) => {
 							const runtime = await this.getOrCreateRuntime(

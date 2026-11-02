@@ -1,5 +1,10 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { join } from "node:path";
+import {
+	assertInputWithinLimits,
+	assertJsonTextWithinLimits,
+} from "@superset/shared/input-limits";
+import { readLimitedTextFile } from "@superset/shared/limited-file";
 import { z } from "zod";
 
 const mcpSettingsSchema = z.object({
@@ -67,7 +72,10 @@ function resolveMcpServers(cwd: string): {
 
 		let parsed: unknown;
 		try {
-			parsed = JSON.parse(readFileSync(sourcePath, "utf-8"));
+			const text = readLimitedTextFile(sourcePath);
+			assertJsonTextWithinLimits(text);
+			parsed = JSON.parse(text);
+			assertInputWithinLimits(parsed);
 		} catch {
 			continue;
 		}

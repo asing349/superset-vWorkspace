@@ -2,6 +2,7 @@ import { CLIError } from "@superset/cli-framework";
 import type { AppRouter as HostServiceRouter } from "@superset/host-service/trpc";
 import { getHostId } from "@superset/shared/host-info";
 import { buildHostRoutingKey } from "@superset/shared/host-routing";
+import { INPUT_LIMITS } from "@superset/shared/input-limits";
 import { createTRPCClient, httpBatchLink } from "@trpc/client";
 import SuperJSON from "superjson";
 import { env } from "../env";
@@ -55,6 +56,8 @@ export function resolveHostTarget(
 			client: createTRPCClient<HostServiceRouter>({
 				links: [
 					httpBatchLink({
+						maxItems: INPUT_LIMITS.batchCalls,
+						maxURLLength: INPUT_LIMITS.urlBytes - 4096,
 						url: `${manifest.endpoint}/trpc`,
 						transformer: SuperJSON,
 						headers: {
@@ -74,6 +77,8 @@ export function resolveHostTarget(
 		client: createTRPCClient<HostServiceRouter>({
 			links: [
 				httpBatchLink({
+					maxItems: INPUT_LIMITS.batchCalls,
+					maxURLLength: INPUT_LIMITS.urlBytes - 4096,
 					url: `${env.RELAY_URL}/hosts/${routingKey}/trpc`,
 					transformer: SuperJSON,
 					headers: {

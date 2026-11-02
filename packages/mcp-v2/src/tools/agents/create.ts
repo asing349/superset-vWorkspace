@@ -1,4 +1,5 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { INPUT_LIMITS } from "@superset/shared/input-limits";
 import { z } from "zod";
 import { createMcpCaller } from "../../caller";
 import { defineTool } from "../../define-tool";
@@ -23,6 +24,7 @@ export function register(server: McpServer): void {
 			prompt: z.string().min(1).describe("Prompt sent to the agent."),
 			attachmentIds: z
 				.array(z.string().uuid())
+				.max(INPUT_LIMITS.files)
 				.optional()
 				.describe(
 					"Host-scoped attachment UUIDs. The host resolves these to absolute paths and appends them to the prompt.",

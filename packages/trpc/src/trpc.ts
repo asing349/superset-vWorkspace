@@ -2,6 +2,10 @@ import type { auth, Session } from "@superset/auth/server";
 import { db } from "@superset/db/client";
 import { members } from "@superset/db/schema";
 import { COMPANY, ORGANIZATION_HEADER } from "@superset/shared/constants";
+import {
+	assertInputWithinLimits,
+	InputLimitError,
+} from "@superset/shared/input-limits";
 import { initTRPC, TRPCError } from "@trpc/server";
 import { and, eq } from "drizzle-orm";
 import superjson from "superjson";
@@ -33,9 +37,24 @@ export const createTRPCRouter = t.router;
 
 export const createCallerFactory = t.createCallerFactory;
 
-export const publicProcedure = t.procedure;
+export const publicProcedure = t.procedure.use(
+	async ({ getRawInput, next }) => {
+		const raw = await getRawInput();
+		try {
+			assertInputWithinLimits(raw);
+		} catch (error) {
+			if (error instanceof InputLimitError)
+				throw new TRPCError({
+					code: "PAYLOAD_TOO_LARGE",
+					message: error.message,
+				});
+			throw error;
+		}
+		return next();
+	},
+);
 
-export const protectedProcedure = t.procedure
+export const protectedProcedure = publicProcedure
 	.use(async ({ ctx, next }) => {
 		if (!ctx.session) {
 			throw new TRPCError({
@@ -70,7 +89,7 @@ export const protectedProcedure = t.procedure
 		return next({ ctx: { ...ctx, activeOrganizationId } });
 	});
 
-export const jwtProcedure = t.procedure.use(async ({ ctx, next }) => {
+export const jwtProcedure = publicProcedure.use(async ({ ctx, next }) => {
 	const authHeader = ctx.headers.get("authorization");
 	const bearer = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null;
 

@@ -1,4 +1,5 @@
 import { automationSessionKindValues } from "@superset/db/schema";
+import { INPUT_LIMITS } from "@superset/shared/input-limits";
 import { z } from "zod";
 
 const agentSchema = z.string().min(1).max(200);
@@ -34,7 +35,7 @@ export const createAutomationSchema = z
 		rrule: rruleBody,
 		dtstart: z.coerce.date().optional(),
 		timezone: iana,
-		mcpScope: z.array(z.string()).default([]),
+		mcpScope: z.array(z.string()).max(INPUT_LIMITS.mcpScopes).default([]),
 	})
 	.refine((input) => input.v2ProjectId || input.v2WorkspaceId, {
 		message: "Provide v2ProjectId or v2WorkspaceId",
@@ -51,7 +52,7 @@ export const updateAutomationSchema = z.object({
 	rrule: rruleBody.optional(),
 	dtstart: z.coerce.date().optional(),
 	timezone: iana.optional(),
-	mcpScope: z.array(z.string()).optional(),
+	mcpScope: z.array(z.string()).max(INPUT_LIMITS.mcpScopes).optional(),
 });
 
 export const setAutomationPromptSchema = z.object({

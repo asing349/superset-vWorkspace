@@ -1,4 +1,5 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { INPUT_LIMITS } from "@superset/shared/input-limits";
 import { z } from "zod";
 import { createMcpCaller } from "../../caller";
 import { defineTool } from "../../define-tool";
@@ -32,7 +33,11 @@ export function register(server: McpServer): void {
 				.nullish()
 				.describe("Story-point estimate."),
 			dueDate: z.string().datetime().nullish().describe("ISO 8601 due date."),
-			labels: z.array(z.string()).nullish().describe("Free-text labels."),
+			labels: z
+				.array(z.string())
+				.max(INPUT_LIMITS.labels)
+				.nullish()
+				.describe("Free-text labels."),
 		},
 		handler: async (input, ctx) => {
 			const caller = createMcpCaller(ctx);

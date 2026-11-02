@@ -1,5 +1,9 @@
+import {
+	assertInputWithinLimits,
+	InputLimitError,
+} from "@superset/shared/input-limits";
 import { createTRPCReact } from "@trpc/react-query";
-import { initTRPC } from "@trpc/server";
+import { initTRPC, TRPCError } from "@trpc/server";
 import superjson from "superjson";
 import type { AppRouter } from "./routers";
 import { NotGitRepoError } from "./routers/workspaces/utils/git";
@@ -58,5 +62,20 @@ const sentryMiddleware = t.middleware(async ({ next, path, type }) => {
 
 export const router = t.router;
 export const mergeRouters = t.mergeRouters;
-export const publicProcedure = t.procedure.use(sentryMiddleware);
+export const publicProcedure = t.procedure
+	.use(async ({ getRawInput, next }) => {
+		const raw = await getRawInput();
+		try {
+			assertInputWithinLimits(raw);
+		} catch (error) {
+			if (error instanceof InputLimitError)
+				throw new TRPCError({
+					code: "PAYLOAD_TOO_LARGE",
+					message: error.message,
+				});
+			throw error;
+		}
+		return next();
+	})
+	.use(sentryMiddleware);
 export const trpc = createTRPCReact<AppRouter>();

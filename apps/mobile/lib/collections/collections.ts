@@ -37,7 +37,7 @@ const organizationsCollection = createCollection(
 			url: electricUrl,
 			params: { table: "auth.organizations" },
 			headers: {
-				Cookie: () => authClient.getCookie() || "",
+				Cookie: async () => (await authClient.getCookie()) || "",
 			},
 			columnMapper,
 		},
@@ -47,7 +47,7 @@ const organizationsCollection = createCollection(
 
 function createOrgCollections(organizationId: string): OrgCollections {
 	const headers = {
-		Cookie: () => authClient.getCookie() || "",
+		Cookie: async () => (await authClient.getCookie()) || "",
 	};
 
 	const tasks = createCollection(

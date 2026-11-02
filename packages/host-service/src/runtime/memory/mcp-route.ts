@@ -1,4 +1,5 @@
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
+import { limitJsonRequest } from "@superset/shared/request-limits";
 import type { Hono } from "hono";
 import type { HostDb } from "../../db/index.ts";
 import { createHostMemoryMcpServer } from "./mcp-provider.ts";
@@ -42,6 +43,8 @@ export function registerMemoryMcpRoute(options: {
 	const { app, db, retrieve } = options;
 
 	const handle = async (req: Request): Promise<Response> => {
+		const bounded = await limitJsonRequest(req);
+		if (bounded instanceof Response) return bounded;
 		// Per-request server + transport (stateless): mirrors the cloud route.
 		// The server reads the injected host data provider only; no shared state
 		// to leak between requests.
@@ -51,7 +54,7 @@ export function registerMemoryMcpRoute(options: {
 			enableJsonResponse: true,
 		});
 		await server.connect(transport);
-		const response = await transport.handleRequest(req);
+		const response = await transport.handleRequest(bounded);
 		// Best-effort close so the per-request pair is released; a throw here must
 		// not turn a served response into a 500.
 		void server.close().catch(() => {});

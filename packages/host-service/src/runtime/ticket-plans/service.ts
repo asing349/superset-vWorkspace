@@ -1,5 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { redactText } from "@superset/memory";
+import {
+	assertInputWithinLimits,
+	assertJsonTextWithinLimits,
+	INPUT_LIMITS,
+} from "@superset/shared/input-limits";
 import { z } from "zod";
 import { analyzeWithCodex } from "../codex/analyze";
 import type { TicketPlanStore } from "./store";
@@ -12,7 +17,7 @@ import type {
 const decisionSchema = z
 	.object({
 		decision: z.enum(["approved", "revise", "escalate"]),
-		feedback: z.array(z.string().trim().min(1)).min(1),
+		feedback: z.array(z.string().trim().min(1)).max(INPUT_LIMITS.labels).min(1),
 	})
 	.strict();
 const reviewOutput = {
@@ -67,7 +72,7 @@ export class TicketPlanService {
 			record.plan = redactText(
 				z
 					.object({ plan: z.string().trim().min(1).max(100_000) })
-					.parse(JSON.parse(result.text)).plan,
+					.parse(boundedModelOutput(result.text)).plan,
 			).text;
 			record.plannerSessionId = result.sessionId;
 			this.store.put(record);
@@ -116,7 +121,7 @@ export class TicketPlanService {
 				throw new Error(
 					"Reviewer must use a different session from the planner.",
 				);
-			const verdict = decisionSchema.parse(JSON.parse(result.text));
+			const verdict = decisionSchema.parse(boundedModelOutput(result.text));
 			record.reviewerSessionId = result.sessionId;
 			record.state =
 				verdict.decision === "escalate" ? "escalated" : verdict.decision;
@@ -175,4 +180,13 @@ export class TicketPlanService {
 		this.store.put(record);
 		return record;
 	}
+}
+
+function boundedModelOutput(text: string): unknown {
+	if (text.length > INPUT_LIMITS.requestBytes)
+		throw new Error("Plan response exceeds the supported size limit");
+	assertJsonTextWithinLimits(text);
+	const value: unknown = JSON.parse(text);
+	assertInputWithinLimits(value);
+	return value;
 }

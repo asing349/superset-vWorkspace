@@ -1,5 +1,5 @@
 import { EventEmitter } from "node:events";
-import { clipboard, Menu, webContents } from "electron";
+import { ClipboardItem, clipboard, Menu, webContents } from "electron";
 import { safeOpenExternal } from "main/lib/safe-url";
 
 interface ConsoleEntry {
@@ -105,8 +105,13 @@ class BrowserManager extends EventEmitter {
 		const wc = this.getWebContents(paneId);
 		if (!wc) throw new Error(`No webContents for pane ${paneId}`);
 		const image = await wc.capturePage();
-		clipboard.writeImage(image);
-		return image.toPNG().toString("base64");
+		const png = image.toPNG();
+		await clipboard.write([
+			new ClipboardItem({
+				"image/png": new Blob([new Uint8Array(png)], { type: "image/png" }),
+			}),
+		]);
+		return png.toString("base64");
 	}
 
 	async evaluateJS(paneId: string, code: string): Promise<unknown> {
@@ -152,7 +157,11 @@ class BrowserManager extends EventEmitter {
 					},
 					{
 						label: "Copy Link Address",
-						click: () => clipboard.writeText(linkURL),
+						click: () => {
+							void clipboard.writeText(linkURL).catch((error: unknown) => {
+								console.error("[browser] Failed to copy link address:", error);
+							});
+						},
 					},
 					{ type: "separator" },
 				);
@@ -216,7 +225,11 @@ class BrowserManager extends EventEmitter {
 					{
 						label: "Copy Page URL",
 						click: () => {
-							if (pageURL) clipboard.writeText(pageURL);
+							if (pageURL) {
+								void clipboard.writeText(pageURL).catch((error: unknown) => {
+									console.error("[browser] Failed to copy page URL:", error);
+								});
+							}
 						},
 						enabled: !!pageURL && pageURL !== "about:blank",
 					},

@@ -1,4 +1,5 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { INPUT_LIMITS } from "@superset/shared/input-limits";
 import { z } from "zod";
 import { createMcpCaller } from "../../caller";
 import { defineTool } from "../../define-tool";
@@ -61,6 +62,7 @@ export function register(server: McpServer): void {
 				.describe("IANA timezone (e.g. America/New_York)."),
 			mcpScope: z
 				.array(z.string())
+				.max(INPUT_LIMITS.mcpScopes)
 				.default([])
 				.describe("Optional MCP scope strings the run should request."),
 		},

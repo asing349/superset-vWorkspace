@@ -3,6 +3,8 @@ import { createNodeWebSocket } from "@hono/node-ws";
 import { trpcServer } from "@hono/trpc-server";
 import { Octokit } from "@octokit/rest";
 import { ChatService } from "@superset/chat/server/desktop";
+import { INPUT_LIMITS } from "@superset/shared/input-limits";
+import { limitJsonRequest } from "@superset/shared/request-limits";
 import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
@@ -412,10 +414,17 @@ export function createApp(options: CreateAppOptions): CreateAppResult {
 	// lives at `<endpoint>/mcp/memory`, and the generated SKILL.md documents it.
 	registerMemoryMcpRoute({ app, db, retrieve: memoryRetrieve });
 
+	app.use("/trpc/*", async (c, next) => {
+		const bounded = await limitJsonRequest(c.req.raw);
+		if (bounded instanceof Response) return bounded;
+		c.req.raw = bounded;
+		return next();
+	});
 	app.use(
 		"/trpc/*",
 		trpcServer({
 			router: appRouter,
+			maxBatchSize: INPUT_LIMITS.batchCalls,
 			createContext: async (_opts, c) => {
 				const isAuthenticated = await providers.hostAuth.validate(c.req.raw);
 				return {

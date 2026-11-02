@@ -1,3 +1,4 @@
+import { INPUT_LIMITS } from "@superset/shared/input-limits";
 import { z } from "zod";
 
 export const ticketPlanScopeSchema = z.object({
@@ -11,6 +12,7 @@ export const ticketPlanScopeSchema = z.object({
 				baseBranch: z.string().min(1).optional(),
 			}),
 		)
+		.max(INPUT_LIMITS.repositories)
 		.min(1),
 	approvedContextProjectId: z.string().min(1),
 	executorAgent: z.enum(["claude", "codex"]).default("claude"),
@@ -29,7 +31,7 @@ export const planRecordSchema = z.object({
 		"escalated",
 		"consumed",
 	]),
-	feedback: z.array(z.string()),
+	feedback: z.array(z.string()).max(INPUT_LIMITS.labels),
 	plannerSessionId: z.string().nullable(),
 	reviewerSessionId: z.string().nullable(),
 	reviewAttempts: z.number().int(),

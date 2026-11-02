@@ -1,0 +1,58 @@
+diff --git a/dist/commonjs/index.js b/dist/commonjs/index.js
+index c176ffce042b015b8cc5d29ba93ef301c885a237..7aac0109ffe7e823affdef4320aa3edd63b42c66 100644
+--- a/dist/commonjs/index.js
++++ b/dist/commonjs/index.js
+@@ -448,6 +448,7 @@ class Minimatch {
+     // **/*/<rest> -> */**/<rest> <== not valid because ** doesn't follow
+     // this WOULD be allowed if ** did follow symlinks, or * didn't
+     firstPhasePreProcess(globParts) {
++        const { braceExpandMax = 100_000 } = this.options;
+         let didSomething = false;
+         do {
+             didSomething = false;
+@@ -475,7 +476,7 @@ class Minimatch {
+                         p === '..' ||
+                         !p2 ||
+                         p2 === '.' ||
+-                        p2 === '..') {
++                        p2 === '..' || globParts.length >= braceExpandMax) {
+                         continue;
+                     }
+                     didSomething = true;
+@@ -532,6 +533,7 @@ class Minimatch {
+     // {<pre>/**/<rest>,<pre>/**/<p>/<rest>} -> <pre>/**/<rest>
+     // ^-- not valid because ** doens't follow symlinks
+     secondPhasePreProcess(globParts) {
++        if (globParts.length > 1000) return globParts;
+         for (let i = 0; i < globParts.length - 1; i++) {
+             for (let j = i + 1; j < globParts.length; j++) {
+                 const matched = this.partsMatch(globParts[i], globParts[j], !this.preserveMultipleSlashes);
+diff --git a/dist/esm/index.js b/dist/esm/index.js
+index a9e0602187c7fd057de9a92951aeb4840febb0be..e40ac376f252726a7a411e1c497cba02aece73c9 100644
+--- a/dist/esm/index.js
++++ b/dist/esm/index.js
+@@ -439,6 +439,7 @@ export class Minimatch {
+     // **/*/<rest> -> */**/<rest> <== not valid because ** doesn't follow
+     // this WOULD be allowed if ** did follow symlinks, or * didn't
+     firstPhasePreProcess(globParts) {
++        const { braceExpandMax = 100_000 } = this.options;
+         let didSomething = false;
+         do {
+             didSomething = false;
+@@ -466,7 +467,7 @@ export class Minimatch {
+                         p === '..' ||
+                         !p2 ||
+                         p2 === '.' ||
+-                        p2 === '..') {
++                        p2 === '..' || globParts.length >= braceExpandMax) {
+                         continue;
+                     }
+                     didSomething = true;
+@@ -523,6 +524,7 @@ export class Minimatch {
+     // {<pre>/**/<rest>,<pre>/**/<p>/<rest>} -> <pre>/**/<rest>
+     // ^-- not valid because ** doens't follow symlinks
+     secondPhasePreProcess(globParts) {
++        if (globParts.length > 1000) return globParts;
+         for (let i = 0; i < globParts.length - 1; i++) {
+             for (let j = i + 1; j < globParts.length; j++) {
+                 const matched = this.partsMatch(globParts[i], globParts[j], !this.preserveMultipleSlashes);

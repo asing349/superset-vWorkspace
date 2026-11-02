@@ -7,7 +7,7 @@ import { join } from "node:path";
 import type { Octokit } from "@octokit/rest";
 import { drizzle } from "drizzle-orm/bun-sqlite";
 import { migrate } from "drizzle-orm/bun-sqlite/migrator";
-import simpleGit, { type SimpleGit } from "simple-git";
+import { type SimpleGit, simpleGit } from "simple-git";
 import type { HostDb } from "../../../db/index.ts";
 import * as schema from "../../../db/schema";
 import { projects } from "../../../db/schema";

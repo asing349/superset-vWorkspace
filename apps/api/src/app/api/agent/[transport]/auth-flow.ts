@@ -2,7 +2,7 @@ import type { AuthInfo } from "@modelcontextprotocol/sdk/server/auth/types.js";
 import type { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import type { createMcpServer } from "@superset/mcp";
 import type { McpContext } from "@superset/mcp/auth";
-import type { verifyAccessToken as verifyOAuthAccessToken } from "better-auth/oauth2";
+import type { verifyBearerToken as verifyOAuthAccessToken } from "better-auth/oauth2";
 import { getOAuthProtectedResourceMetadataUrl } from "@/lib/oauth-metadata";
 
 interface SessionUser {

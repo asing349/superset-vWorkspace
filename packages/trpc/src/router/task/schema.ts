@@ -1,4 +1,5 @@
 import { taskPriorityValues } from "@superset/db/enums";
+import { INPUT_LIMITS } from "@superset/shared/input-limits";
 import { z } from "zod";
 
 export const createTaskSchema = z.object({
@@ -9,7 +10,7 @@ export const createTaskSchema = z.object({
 	assigneeId: z.string().uuid().nullish(),
 	estimate: z.number().int().positive().nullish(),
 	dueDate: z.coerce.date().nullish(),
-	labels: z.array(z.string()).nullish(),
+	labels: z.array(z.string()).max(INPUT_LIMITS.labels).nullish(),
 });
 
 export const updateTaskSchema = z.object({
@@ -22,7 +23,7 @@ export const updateTaskSchema = z.object({
 	prUrl: z.string().url().nullish(),
 	estimate: z.number().int().positive().nullish(),
 	dueDate: z.coerce.date().nullish(),
-	labels: z.array(z.string()).nullish(),
+	labels: z.array(z.string()).max(INPUT_LIMITS.labels).nullish(),
 	// Deprecated: accepted-but-ignored. Drop in CLI-vNext cleanup PR.
 	branch: z.string().nullish(),
 });

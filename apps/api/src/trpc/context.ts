@@ -2,7 +2,7 @@ import { auth, type Session } from "@superset/auth/server";
 import { db } from "@superset/db/client";
 import * as authSchema from "@superset/db/schema/auth";
 import { createTRPCContext } from "@superset/trpc";
-import { verifyAccessToken } from "better-auth/oauth2";
+import { verifyBearerToken as verifyAccessToken } from "better-auth/oauth2";
 import { eq } from "drizzle-orm";
 import { env } from "@/env";
 

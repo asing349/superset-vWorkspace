@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { INPUT_LIMITS } from "@superset/shared/input-limits";
 import { TRPCError } from "@trpc/server";
 import { asc, eq } from "drizzle-orm";
 import { z } from "zod";
@@ -308,7 +309,10 @@ export const agentsRouter = router({
 				workspaceId: z.string().uuid(),
 				agent: z.string().min(1),
 				prompt: z.string().min(1),
-				attachmentIds: z.array(z.string().uuid()).optional(),
+				attachmentIds: z
+					.array(z.string().uuid())
+					.max(INPUT_LIMITS.files)
+					.optional(),
 			}),
 		)
 		.mutation(async ({ ctx, input }) => runAgentInWorkspace(ctx, input)),

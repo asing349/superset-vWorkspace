@@ -1,4 +1,6 @@
-"use client";
+import { INPUT_LIMITS } from "@superset/shared/input-limits";
+
+("use client");
 
 import type { AppRouter } from "@superset/trpc";
 import type { QueryClient } from "@tanstack/react-query";
@@ -42,6 +44,8 @@ export function TRPCReactProvider(props: { children: React.ReactNode }) {
 						(op.direction === "down" && op.result instanceof Error),
 				}),
 				httpBatchStreamLink({
+					maxItems: INPUT_LIMITS.batchCalls,
+					maxURLLength: INPUT_LIMITS.urlBytes - 4096,
 					transformer: SuperJSON,
 					url: `${env.NEXT_PUBLIC_API_URL}/api/trpc`,
 					headers() {

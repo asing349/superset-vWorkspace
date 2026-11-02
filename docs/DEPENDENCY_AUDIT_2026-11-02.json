@@ -1,0 +1,391 @@
+{
+	"dateUTC": "2026-11-02T17:07:45.947617+00:00",
+	"scope": "Full resolved dependency graph, including development and optional dependencies; advisory records are not unique CVEs or confirmed runtime exposures.",
+	"registry": "https://registry.npmjs.org",
+	"bunVersion": "1.4.4",
+	"lockfileSHA256": "82678fae398c04e0ea0557898cbd57c69b882dd593db580ae88f8a37d6559f8a",
+	"initialResolvedAudit": {
+		"affectedPackageNames": 72,
+		"advisoryRecords": 289,
+		"uniqueAdvisoryIds": 289,
+		"severityRecords": {
+			"low": 30,
+			"moderate": 110,
+			"high": 140,
+			"critical": 9
+		}
+	},
+	"finalResolvedAudit": {
+		"affectedPackageNames": 6,
+		"advisoryRecords": 7,
+		"uniqueAdvisoryIds": 7,
+		"severityRecords": {
+			"critical": 0,
+			"high": 3,
+			"moderate": 2,
+			"low": 2
+		}
+	},
+	"remaining": {
+		"deepmerge": {
+			"lockedVersions": ["4.3.1"],
+			"advisories": [
+				{
+					"id": 1243505,
+					"url": "https://github.com/advisories/GHSA-gcqx-w48m-w2h4",
+					"title": "deepmerge mergeObject() allows prototype poisoning of returned objects",
+					"severity": "low",
+					"vulnerable_versions": ">=4.2.0 <=4.3.1",
+					"cwe": ["CWE-1321"],
+					"cvss": {
+						"score": 5.3,
+						"vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:L/A:N"
+					}
+				}
+			]
+		},
+		"glob": {
+			"lockedVersions": ["10.5.0", "11.1.0", "13.0.6", "7.2.3"],
+			"advisories": [
+				{
+					"id": 1244013,
+					"url": "https://github.com/advisories/GHSA-3g3m-2fjr-6pw4",
+					"title": "Glob: AbortSignal cancellation bypass allows post-timeout filesystem traversal",
+					"severity": "moderate",
+					"vulnerable_versions": ">=9.0.0 <=14.0.1",
+					"cwe": ["CWE-400"],
+					"cvss": {
+						"score": 0,
+						"vectorString": null
+					}
+				}
+			]
+		},
+		"image-size": {
+			"lockedVersions": ["1.2.1", "2.0.4"],
+			"advisories": [
+				{
+					"id": 1239765,
+					"url": "https://github.com/advisories/GHSA-5p2g-fcmc-qvqq",
+					"title": "image-size: JXL and HEIF parsers allow denial of service through infinite loops",
+					"severity": "high",
+					"vulnerable_versions": ">=1.2.0 <=2.0.2",
+					"cwe": ["CWE-835"],
+					"cvss": {
+						"score": 7.5,
+						"vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H"
+					}
+				},
+				{
+					"id": 1239766,
+					"url": "https://github.com/advisories/GHSA-w3rx-r6r6-pgpr",
+					"title": "image-size: ICNS parser allows denial of service through an infinite loop",
+					"severity": "high",
+					"vulnerable_versions": ">=0.6.3 <=2.0.2",
+					"cwe": ["CWE-835"],
+					"cvss": {
+						"score": 7.5,
+						"vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H"
+					}
+				}
+			]
+		},
+		"katex": {
+			"lockedVersions": ["0.16.47", "0.17.0"],
+			"advisories": [
+				{
+					"id": 1241206,
+					"url": "https://github.com/advisories/GHSA-238p-pmpm-9mq7",
+					"title": "KaTeX: Existing prototype pollution can bypass trust restrictions",
+					"severity": "low",
+					"vulnerable_versions": ">=0.11.0 <0.18.2",
+					"cwe": ["CWE-807"],
+					"cvss": {
+						"score": 0,
+						"vectorString": null
+					}
+				}
+			]
+		},
+		"minimatch": {
+			"lockedVersions": ["10.2.4", "10.2.6", "3.1.5", "5.1.9", "9.0.9"],
+			"advisories": [
+				{
+					"id": 1244012,
+					"url": "https://github.com/advisories/GHSA-g3hv-75wg-m249",
+					"title": "minimatch has potential denial of service via globparts amplification",
+					"severity": "moderate",
+					"vulnerable_versions": "<11.0.1",
+					"cwe": ["CWE-405"],
+					"cvss": {
+						"score": 0,
+						"vectorString": null
+					}
+				}
+			]
+		},
+		"zod": {
+			"lockedVersions": ["3.25.76", "4.6.7"],
+			"advisories": [
+				{
+					"id": 1243066,
+					"url": "https://github.com/advisories/GHSA-mrhx-c7xc-m3w5",
+					"title": "Zod can exhaust memory while validating oversized constrained collections",
+					"severity": "high",
+					"vulnerable_versions": "<4.6.6",
+					"cwe": ["CWE-770"],
+					"cvss": {
+						"score": 7.5,
+						"vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H"
+					}
+				}
+			]
+		}
+	},
+	"beforeGitAndParentMigrationAudit": {
+		"affectedPackageNames": 25,
+		"advisoryRecords": 55,
+		"uniqueAdvisoryIds": 55,
+		"severityRecords": {
+			"low": 6,
+			"high": 24,
+			"moderate": 23,
+			"critical": 2
+		}
+	},
+	"beforeSdkBrowserMigrationAudit": {
+		"affectedPackageNames": 14,
+		"advisoryRecords": 40,
+		"uniqueAdvisoryIds": 40,
+		"severityRecords": {
+			"critical": 0,
+			"high": 18,
+			"moderate": 16,
+			"low": 6
+		}
+	},
+	"beforeCompatibilityPatchesAudit": {
+		"affectedPackageNames": 9,
+		"advisoryRecords": 15,
+		"uniqueAdvisoryIds": 15,
+		"severityRecords": {
+			"critical": 0,
+			"high": 9,
+			"moderate": 4,
+			"low": 2
+		}
+	},
+	"unmitigatedAudit": {
+		"affectedPackageNames": 1,
+		"advisoryRecords": 1,
+		"uniqueAdvisoryIds": 1,
+		"severityRecords": {
+			"critical": 0,
+			"high": 1,
+			"moderate": 0,
+			"low": 0
+		}
+	},
+	"localMitigations": {
+		"deepmerge": {
+			"advisories": ["https://github.com/advisories/GHSA-gcqx-w48m-w2h4"],
+			"status": "Locally mitigated; npm still reports the unchanged package version.",
+			"patch": "patches/deepmerge@4.3.1.patch",
+			"patchSHA256": "a502f744ddf4e378b546e9aa607bb91b859bece527fdea5b90266633479b65c6",
+			"verification": "12 regression checks across CommonJS and UMD; clean offline install replay under Node confirms all three prototype-poisoning shapes are blocked."
+		},
+		"image-size": {
+			"advisories": [
+				"https://github.com/advisories/GHSA-5p2g-fcmc-qvqq",
+				"https://github.com/advisories/GHSA-w3rx-r6r6-pgpr"
+			],
+			"status": "Locally mitigated by upstream-derived backport; npm still reports unchanged package versions.",
+			"patches": {
+				"patches/image-size@1.2.1.patch": "a9fbe138d0a045193ef5fba42136570669ad2bed9291f26454ac968056180777"
+			},
+			"verification": "5 passing actual Metro-chain parser and Buffer/file/callback checks; malformed inputs run in memory/time-capped workers. Original package failed three cases.",
+			"upstreamFix": "https://codeberg.org/image-size/image-size/commit/e6e83a5578961de81f6d5834d90fb7430d8f29a5"
+		},
+		"katex": {
+			"advisories": ["https://github.com/advisories/GHSA-238p-pmpm-9mq7"],
+			"status": "Locally mitigated by upstream-derived backport; npm still reports unchanged package versions.",
+			"patches": {
+				"patches/katex@0.16.47.patch": "93f6467a90bc268f8fb8425c8d57b32d459df95661efba59748650b7ba6fa629",
+				"patches/katex@0.17.0.patch": "eefb834489e433e48dadaceb09dcb5ebf40acddb4df001ac5f81ea151865c1ec"
+			},
+			"verification": "6 passing runtime-variant checks across both versions/CommonJS/ESM/minified browser bundles: own explicit trust preserved, inherited settings/macros rejected, ordinary rendering hashes unchanged. CSS/fonts untouched.",
+			"upstreamFix": "https://github.com/KaTeX/KaTeX/commit/0adf7e77db6915d991803b29699f82b1ccf8d4f4"
+		},
+		"glob": {
+			"advisories": ["https://github.com/advisories/GHSA-3g3m-2fjr-6pw4"],
+			"status": "Locally mitigated by upstream-derived backports; npm still reports unchanged package versions. Glob 7 is outside the advisory range.",
+			"patches": {
+				"patches/glob@10.5.0.patch": "aa3a98d243db59427689bada80d8824e3e8b7cff11bf6007c528d70324791dd3",
+				"patches/glob@11.1.0.patch": "aa3a98d243db59427689bada80d8824e3e8b7cff11bf6007c528d70324791dd3",
+				"patches/glob@13.0.6.patch": "aa3a98d243db59427689bada80d8824e3e8b7cff11bf6007c528d70324791dd3"
+			},
+			"upstreamFix": "https://github.com/isaacs/node-glob/commit/4682e8c9babee1b385202ede36389634e12076d7",
+			"verification": "36 clean-install checks across versions 10.5.0/11.1.0/13.0.6, CommonJS/ESM, async and sync streams: cancellation stops filesystem reads, queued callbacks settle, normal and paused/resumed walks work."
+		},
+		"minimatch": {
+			"advisories": ["https://github.com/advisories/GHSA-g3hv-75wg-m249"],
+			"status": "Described optimization-level-2 amplification path locally mitigated in modern versions. Legacy 3.1.5/5.1.9 lack this optimizer path; this is not a claim that arbitrary old patterns have no resource cost. npm still reports unchanged versions.",
+			"patches": {
+				"patches/minimatch@10.2.4.patch": "90735dddcd7e7cc450b29af15b7fb7d21f8173f959175067ca5102f8abb891da",
+				"patches/minimatch@10.2.6.patch": "4aaea1ef89f7e6c6957ab6f16037e5b5568fde69b96aa9a23b2f2c4eff37a6b0",
+				"patches/minimatch@9.0.9.patch": "b857bf2b3754c97c8460a248e5882577852a92a5e8d7cc7085f2a20e985a9e23"
+			},
+			"upstreamFix": "https://github.com/isaacs/minimatch/commit/77a0f5c4b80bdc641c3c930a1d9edf5ad2db57f8",
+			"verification": "8 clean-install worker checks across legacy callable APIs and modern CommonJS/ESM variants: bounded expansion, large-set dedupe cutoff, ordinary matching. Modern workers are memory/time capped."
+		},
+		"zod": {
+			"advisories": ["https://github.com/advisories/GHSA-mrhx-c7xc-m3w5"],
+			"status": "PARTIAL: bounded-collection backports plus approved application input envelopes mitigate inspected entry points. npm still flags v3; dependency-internal/uninspected consumers are not established globally safe.",
+			"patches": {
+				"patches/zod@3.25.76.patch": "d165a14757d34869c0f2b9cc1fb992605bed6954111d14837c4d764f640ca3e9",
+				"patches/zod@4.6.7.patch": "608c3939121a218c1aaddcbfa4842e98b7cdf7fce08b6f11fd208c33f8844a3a"
+			},
+			"upstreamFix": "https://github.com/colinhacks/zod/commit/a0ebf970f2d752e5f58527cd2942ff48be4f46bd",
+			"scopeReferences": [
+				"https://github.com/colinhacks/zod/issues/1872",
+				"https://github.com/colinhacks/zod/pull/6652",
+				"https://github.com/colinhacks/zod/pull/6475"
+			],
+			"verification": "41 clean-install tests across Zod 3.25.76 and Zod 4.6.7 embedded v3 CommonJS/ESM plus the actual v3 JSON-schema adapter; bounded collections skip child allocation/async dispatch, valid transforms/defaults and normal errors remain compatible. Unbounded arrays deliberately retain full-error behavior.",
+			"remainingDecision": "Input-limit approach approved and implemented. Remaining high record is retained conservatively for dependency-internal/uninspected parsing paths; full removal requires supported upstream/consumer migration and separate verification.",
+			"followUpInvestigation": {
+				"productionChanges": "none; existing checkpoint preserved",
+				"runtimeProbes": 7,
+				"schemaOnlyProbes": 2,
+				"allPassed": true,
+				"maxProbeElements": 1024,
+				"containerMemoryMiB": 384,
+				"nodeHeapMiB": 128,
+				"testedAPIs": [
+					"v3 safeParse",
+					"v4 safeParse",
+					"v4 validate",
+					"v4 validateAsync",
+					"actual tRPC input parser",
+					"ticketPlanScopeSchema",
+					"sendMessagePayloadSchema"
+				],
+				"finding": "No behavior-preserving global resource ceiling exists for the current unbounded full-error contract. Supported v4 boolean APIs do not replace transformed parsing and do not bound genuinely async dispatch.",
+				"decisionNeeded": "Approve workload-specific input envelopes and/or bounded diagnostic/work semantics; preserve the existing 25 MiB attachment allowance.",
+				"deploymentLimits": "not verified; not counted as mitigation",
+				"sourceReferences": [
+					"packages/host-service/src/runtime/ticket-plans/types.ts:7",
+					"packages/chat/src/server/trpc/zod.ts:33",
+					"packages/trpc/src/router/task/schema.ts:12",
+					"packages/trpc/src/trpc.ts:20",
+					"packages/host-service/src/app.ts:415"
+				],
+				"officialAPIReference": "https://zod.dev/basics?id=handling-errors",
+				"decisionStatus": "Resolved: user approved workload-specific input envelopes; see inputLimitRemediation."
+			}
+		}
+	},
+	"beforeRestartMitigationsAudit": {
+		"affectedPackageNames": 5,
+		"advisoryRecords": 6,
+		"uniqueAdvisoryIds": 6,
+		"severityRecords": {
+			"critical": 0,
+			"high": 3,
+			"moderate": 2,
+			"low": 1
+		}
+	},
+	"combinedCleanInstall": {
+		"workspace": "/tmp/superset-combined-clean-4i6wupfm",
+		"bunVersion": "1.4.4",
+		"nodeVersion": "22.22.3",
+		"packagesInstalled": 2779,
+		"cache": "Initially empty .fresh-bun-cache; official registry downloads; frozen lock; lifecycle scripts disabled.",
+		"patchedPackages": 13,
+		"nodeRegressionTests": 124,
+		"bunChatArchiveMergeTests": 144,
+		"launcherReviewerCodexTests": 79,
+		"dependencyPolicy": "passed",
+		"networkDuringTests": "disabled",
+		"auditExitCode": 1,
+		"typechecks": ["host-service", "chat", "mobile", "desktop"],
+		"noEmit": true,
+		"lifecycleScripts": "disabled"
+	},
+	"unmitigatedAuditScope": "Conservative unresolved dependency-level subset. Application ingress mitigations are recorded separately; they do not suppress npm records or establish safety for every internal dependency parser.",
+	"inputLimitRemediation": {
+		"status": "Implemented and verified locally; user approved input envelopes.",
+		"limits": {
+			"repositories": 32,
+			"agentsPerWorkspace": 16,
+			"filesPerMessageOrLaunch": 16,
+			"labels": 128,
+			"mcpScopes": 128,
+			"reviewFeedbackItems": 128,
+			"rpcBatchCalls": 32,
+			"collectionEntries": 4096,
+			"objectKeys": 1024,
+			"totalValues": 20000,
+			"depth": 32,
+			"httpRequestBytes": 4194304,
+			"attachmentAndChatRequestBytes": 37748736,
+			"urlBytes": 65536,
+			"directInputTextCodeUnits": 37748736,
+			"directInputBinaryBytes": 37748736,
+			"localConfigOrPlanFileBytes": 4194304,
+			"decodedAttachmentBytesUnchanged": 26214400
+		},
+		"boundaries": [
+			"host tRPC HTTP",
+			"cloud tRPC HTTP",
+			"chat runtime HTTP",
+			"local memory MCP HTTP",
+			"cloud MCP v1/v2 HTTP",
+			"host/cloud/chat tRPC before schema parsing including direct calls",
+			"desktop IPC tRPC",
+			"local MCP configuration",
+			"saved and model-produced ticket plans"
+		],
+		"implementation": [
+			"streamed byte count; does not trust Content-Length",
+			"structural scan before JSON.parse",
+			"iterative decoded-value guard before Zod",
+			"schema upper bounds before child validation",
+			"client batch/URL limits; individual attachment-bearing calls"
+		],
+		"verification": {
+			"focusedBudgetUploadMcpTests": 42,
+			"launcherReviewerCodexTests": 79,
+			"chatTests": 127,
+			"signedBearerVerifierTests": 1,
+			"totalTests": 249,
+			"typechecks": [
+				"shared",
+				"host-service",
+				"chat",
+				"desktop",
+				"mobile",
+				"API",
+				"MCP v2",
+				"workspace-client"
+			],
+			"dependencyPolicy": "passed",
+			"focusedLint": "passed",
+			"frozenInstall": "passed; workspace-only lock metadata changes; lifecycle scripts disabled",
+			"auditExitCode": 1
+		},
+		"compatibilityFix": "Better Auth 1.7 supported verifyBearerToken replaces removed verifyAccessToken imports; existing issuer/audience checks retained; signed fixture rejects wrong issuer/audience, expiry and unsupported DPoP-bound bearer use.",
+		"remainingExposure": [
+			"npm records remain version-based",
+			"internal Expo/AI/browser adapter parsing and other uninspected webhook/provider paths are not globally covered",
+			"per-request limits are not concurrency/rate quotas or bounds on arbitrary custom refinement CPU",
+			"macOS native/runtime and application startup remain unverified"
+		],
+		"worktree": "/Users/ajitsingh/Documents/GitHub/superset-vWorkspace",
+		"branch": "claude/keen-euler-e9b3x8",
+		"headUnchanged": "52c02988102df217c7e238b763f767dc17588970",
+		"committed": false,
+		"pushed": false
+	}
+}

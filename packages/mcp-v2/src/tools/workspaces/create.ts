@@ -1,4 +1,5 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { INPUT_LIMITS } from "@superset/shared/input-limits";
 import { z } from "zod";
 import { defineTool } from "../../define-tool";
 import { hostServiceCall } from "../../host-service-client";
@@ -13,6 +14,7 @@ const agentLaunchSchema = z.object({
 	prompt: z.string().min(1).describe("Initial prompt the agent starts with."),
 	attachmentIds: z
 		.array(z.string().uuid())
+		.max(INPUT_LIMITS.files)
 		.optional()
 		.describe(
 			"Host-scoped attachment UUIDs. The host resolves these to absolute paths and appends them to the prompt.",
@@ -59,6 +61,7 @@ export function register(server: McpServer): void {
 				.describe("Optional Superset task id to link to the new workspace."),
 			agents: z
 				.array(agentLaunchSchema)
+				.max(INPUT_LIMITS.agents)
 				.optional()
 				.describe(
 					"Agents to spawn in the workspace immediately after creation.",

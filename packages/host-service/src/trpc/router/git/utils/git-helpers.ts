@@ -334,7 +334,7 @@ export async function detectUnstagedRenames(
 		const tempIndex = join(tempDir, "index");
 		await copyFile(indexPath, tempIndex);
 
-		const tempGit = createUserSimpleGit(worktreePath).env({
+		const tempGit = createUserSimpleGit(worktreePath, {
 			...process.env,
 			GIT_INDEX_FILE: tempIndex,
 		});

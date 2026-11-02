@@ -1,5 +1,6 @@
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
+import { INPUT_LIMITS } from "@superset/shared/input-limits";
 import { generateFriendlyBranchName } from "@superset/shared/workspace-launch";
 import { TRPCError } from "@trpc/server";
 import { and, eq } from "drizzle-orm";
@@ -52,7 +53,10 @@ const agentLaunchSchema = z
 	.object({
 		agent: z.string().min(1),
 		prompt: z.string(),
-		attachmentIds: z.array(z.string().uuid()).optional(),
+		attachmentIds: z
+			.array(z.string().uuid())
+			.max(INPUT_LIMITS.files)
+			.optional(),
 	})
 	.refine(
 		(value) =>
@@ -72,7 +76,7 @@ const createInputSchema = z
 		pr: z.number().int().positive().optional(),
 		baseBranch: z.string().min(1).optional(),
 		taskId: z.string().uuid().optional(),
-		agents: z.array(agentLaunchSchema).optional(),
+		agents: z.array(agentLaunchSchema).max(INPUT_LIMITS.agents).optional(),
 		command: z.string().min(1).optional(),
 		namingPrompt: z.string().min(1).optional(),
 		id: z.string().uuid().optional(),

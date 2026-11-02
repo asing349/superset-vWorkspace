@@ -32,6 +32,15 @@ const PNG_BASE64 =
 	"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
 
 describe("attachmentsRouter.upload", () => {
+	it("retains the full 25 MiB per-file allowance through the guarded caller", async () => {
+		const data = Buffer.alloc(MAX_ATTACHMENT_BYTES).toString("base64");
+		const result = await createCaller().upload({
+			data: { kind: "base64", data },
+			mediaType: "application/octet-stream",
+		});
+		expect(result.sizeBytes).toBe(MAX_ATTACHMENT_BYTES);
+	});
+
 	it("writes bytes and metadata to disk under HOST_MANIFEST_DIR", async () => {
 		const caller = createCaller();
 		const result = await caller.upload({

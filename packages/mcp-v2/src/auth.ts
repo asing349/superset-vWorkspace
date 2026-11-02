@@ -1,7 +1,7 @@
 import { auth, mintUserJwt } from "@superset/auth/server";
 import { db } from "@superset/db/client";
 import { members, users } from "@superset/db/schema";
-import { verifyAccessToken } from "better-auth/oauth2";
+import { verifyBearerToken as verifyAccessToken } from "better-auth/oauth2";
 import { eq } from "drizzle-orm";
 
 export interface McpContext {

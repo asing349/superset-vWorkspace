@@ -1,4 +1,5 @@
 import { ORGANIZATION_HEADER } from "@superset/shared/constants";
+import { INPUT_LIMITS } from "@superset/shared/input-limits";
 import type { AppRouter } from "@superset/trpc";
 import { createTRPCClient, httpBatchLink, type TRPCLink } from "@trpc/client";
 import { observable } from "@trpc/server/observable";
@@ -60,6 +61,8 @@ export function createApiClient(
 		links: [
 			retryOnUnauthorizedLink(authProvider),
 			httpBatchLink({
+				maxItems: INPUT_LIMITS.batchCalls,
+				maxURLLength: INPUT_LIMITS.urlBytes - 4096,
 				url: `${baseUrl}/api/trpc`,
 				transformer: SuperJSON,
 				async headers() {

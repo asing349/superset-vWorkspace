@@ -1,3 +1,4 @@
+import { INPUT_LIMITS } from "@superset/shared/input-limits";
 import type { createMastraCode } from "mastracode";
 import { z } from "zod";
 
@@ -40,6 +41,7 @@ export const sendMessagePayloadSchema = z.object({
 				filename: z.string().optional(),
 			}),
 		)
+		.max(INPUT_LIMITS.files)
 		.optional(),
 }) satisfies z.ZodType<SendMessagePayload>;
 

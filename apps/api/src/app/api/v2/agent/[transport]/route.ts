@@ -5,6 +5,7 @@ import {
 	type McpContext,
 	resolveMcpContext,
 } from "@superset/mcp-v2";
+import { limitJsonRequest } from "@superset/shared/request-limits";
 import { env } from "@/env";
 import { posthog } from "@/lib/analytics";
 import { getOAuthProtectedResourceMetadataUrl } from "@/lib/oauth-metadata";
@@ -24,6 +25,9 @@ function unauthorizedResponse(req: Request, message: string): Response {
 }
 
 async function handle(req: Request): Promise<Response> {
+	const bounded = await limitJsonRequest(req);
+	if (bounded instanceof Response) return bounded;
+	req = bounded;
 	let ctx: McpContext;
 	try {
 		ctx = await resolveMcpContext(req, {

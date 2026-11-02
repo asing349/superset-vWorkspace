@@ -143,3 +143,33 @@ describe("memory MCP loopback route (wave-4 A1a)", () => {
 		expect(MEMORY_MCP_ROUTE_PATH).toBe("/mcp/memory");
 	});
 });
+
+describe("memory MCP input envelope", () => {
+	it("rejects oversized JSON before constructing an SDK server", async () => {
+		const app = new Hono();
+		// No valid provider is needed: neither SDK nor retrieval may run above the envelope.
+		registerMemoryMcpRoute({
+			app,
+			db: {} as HostDb,
+			retrieve: {} as MemoryRetrieveService,
+		});
+		for (const body of [
+			JSON.stringify({
+				jsonrpc: "2.0",
+				params: { values: Array(4097).fill(0) },
+			}),
+			JSON.stringify({ value: "x".repeat(4 * 1024 * 1024) }),
+		]) {
+			const res = await app.request(MEMORY_MCP_ROUTE_PATH, {
+				method: "POST",
+				headers: { "content-type": "application/json" },
+				body,
+			});
+			expect(res.status).toBe(413);
+			expect(await res.json()).toMatchObject({
+				jsonrpc: "2.0",
+				error: { code: -32600 },
+			});
+		}
+	});
+});

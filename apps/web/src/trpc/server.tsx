@@ -1,3 +1,4 @@
+import { INPUT_LIMITS } from "@superset/shared/input-limits";
 import "server-only";
 
 import type { AppRouter } from "@superset/trpc";
@@ -15,6 +16,8 @@ export const api = cache(async () => {
 	return createTRPCClient<AppRouter>({
 		links: [
 			httpBatchLink({
+				maxItems: INPUT_LIMITS.batchCalls,
+				maxURLLength: INPUT_LIMITS.urlBytes - 4096,
 				transformer: SuperJSON,
 				url: `${env.NEXT_PUBLIC_API_URL}/api/trpc`,
 				headers() {

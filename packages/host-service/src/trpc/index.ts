@@ -1,3 +1,7 @@
+import {
+	assertInputWithinLimits,
+	InputLimitError,
+} from "@superset/shared/input-limits";
 import { initTRPC, TRPCError } from "@trpc/server";
 import superjson from "superjson";
 import type { HostServiceContext } from "../types";
@@ -65,9 +69,24 @@ const t = initTRPC
 	});
 
 export const router = t.router;
-export const publicProcedure = t.procedure;
+export const publicProcedure = t.procedure.use(
+	async ({ getRawInput, next }) => {
+		const raw = await getRawInput();
+		try {
+			assertInputWithinLimits(raw);
+		} catch (error) {
+			if (error instanceof InputLimitError)
+				throw new TRPCError({
+					code: "PAYLOAD_TOO_LARGE",
+					message: error.message,
+				});
+			throw error;
+		}
+		return next();
+	},
+);
 
-export const protectedProcedure = t.procedure.use(async ({ ctx, next }) => {
+export const protectedProcedure = publicProcedure.use(async ({ ctx, next }) => {
 	if (!ctx.isAuthenticated) {
 		throw new TRPCError({
 			code: "UNAUTHORIZED",

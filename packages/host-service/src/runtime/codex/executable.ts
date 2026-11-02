@@ -40,10 +40,7 @@ function isSupersetWrapper(candidate: string): boolean {
  * No installation, login, shell probing or persistent PATH/config changes.
  */
 export function resolveCodexExecutable(
-	options: {
-		env?: NodeJS.ProcessEnv;
-		allowSupersetWrappers?: boolean;
-	} = {},
+	options: { env?: NodeJS.ProcessEnv; allowSupersetWrappers?: boolean } = {},
 ): string {
 	const env = options.env ?? getCodexProcessEnv();
 	const override = env.SUPERSET_CODEX_EXECUTABLE?.trim();

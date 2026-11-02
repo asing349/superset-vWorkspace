@@ -31,3 +31,21 @@ export const USER_GIT_ENV_SIMPLE_GIT_OPTIONS = {
 } as {
 	unsafe: Record<SimpleGitUnsafeOptionFlag, true>;
 };
+
+/** Preserve only the environment supplied by this local Git client. New v4
+ * command guards (for example trailer command injection) stay enabled. */
+export function getUserGitEnvironmentOptions(
+	env: Record<string, string | undefined> = process.env,
+) {
+	return {
+		...USER_GIT_ENV_SIMPLE_GIT_OPTIONS,
+		allowEnvironment: Object.keys(env),
+		unsafe: {
+			...USER_GIT_ENV_SIMPLE_GIT_OPTIONS.unsafe,
+			// v4 classifies a user-selected Git executable directory separately.
+			allowUnsafeExec: Object.entries(env).some(
+				([key, value]) => key.toUpperCase() === "GIT_EXEC_PATH" && !!value,
+			),
+		},
+	};
+}

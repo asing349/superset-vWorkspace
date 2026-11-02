@@ -1,3 +1,4 @@
+import { INPUT_LIMITS } from "@superset/shared/input-limits";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { readTicketPlanSnapshot } from "../../../runtime/ticket-plans/snapshot";
@@ -48,6 +49,7 @@ const startInputSchema = z.object({
 				baseBranch: z.string().min(1).optional(),
 			}),
 		)
+		.max(INPUT_LIMITS.repositories)
 		.min(1),
 	/** The projectId the approved context was stored under (B3 store key). */
 	approvedContextProjectId: z.string().min(1),
