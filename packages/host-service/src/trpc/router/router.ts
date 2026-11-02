@@ -5,6 +5,7 @@ import { authRouter } from "./auth";
 import { businessRulesRouter } from "./business-rules";
 import { chatRouter } from "./chat";
 import { cloudRouter } from "./cloud";
+import { codexRouter } from "./codex/codex";
 import { configRouter } from "./config";
 import { filesystemRouter } from "./filesystem";
 import { gitRouter } from "./git";
@@ -24,6 +25,7 @@ import { settingsRouter } from "./settings";
 import { terminalRouter } from "./terminal";
 import { terminalAgentsRouter } from "./terminal-agents";
 import { ticketContextRouter } from "./ticket-context";
+import { ticketPlanRouter } from "./ticket-plan/ticket-plan";
 import { ticketRunRouter } from "./ticket-run";
 import { ticketsRouter } from "./tickets";
 import { workspaceRouter } from "./workspace";
@@ -41,6 +43,7 @@ export const appRouter = router({
 	host: hostRouter,
 	chat: chatRouter,
 	config: configRouter,
+	codex: codexRouter,
 	filesystem: filesystemRouter,
 	git: gitRouter,
 	github: githubRouter,
@@ -60,6 +63,7 @@ export const appRouter = router({
 	tickets: ticketsRouter,
 	ticketContext: ticketContextRouter,
 	ticketRun: ticketRunRouter,
+	ticketPlan: ticketPlanRouter,
 	workspace: workspaceRouter,
 	workspaces: workspacesRouter,
 	workspaceGroup: workspaceGroupRouter,

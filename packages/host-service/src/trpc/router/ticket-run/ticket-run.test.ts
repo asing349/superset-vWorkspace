@@ -13,7 +13,7 @@ import {
 } from "../../../db/schema";
 import { MemoryRetrieveService } from "../../../runtime/memory/retrieve-service.ts";
 import type { HostServiceContext } from "../../../types";
-import { ticketRunRouter } from "./ticket-run.ts";
+import { createTicketRunRouter, ticketRunRouter } from "./ticket-run.ts";
 
 /**
  * B5 router contract: `ticketRun.start` is the host entrypoint the desktop UI
@@ -73,7 +73,7 @@ describe("ticketRun router (B5 entrypoint)", () => {
 		expect(db.select().from(ticketRuns).all().length).toBe(0);
 	});
 
-	it("succeeds (PRECONDITION met) once a context is approved, recording a run row", async () => {
+	it("approved context alone cannot bypass independent plan review", async () => {
 		db.insert(approvedTicketContext)
 			.values({
 				id: crypto.randomUUID(),
@@ -82,20 +82,102 @@ describe("ticketRun router (B5 entrypoint)", () => {
 				content: "approved work",
 			})
 			.run();
-
-		// Inject a createWorkspace via the runtime path: the router builds its own
-		// from ctx, but the not-approved precondition is now satisfied, so dispatch
-		// proceeds and records a run row per repo. We assert the gate is passed and
-		// a row is produced (the orchestrator lifecycle itself is covered in
-		// dispatch.test.ts); a thrown launch is recorded on the row, not surfaced.
-		const result = await caller().start({
+		await expect(
+			caller().start({
+				taskId,
+				ticketKey: "SUPER-1",
+				repos: [{ projectId }],
+				approvedContextProjectId: projectId,
+			}),
+		).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
+		expect(db.select().from(ticketRuns).all()).toHaveLength(0);
+	});
+	it("approved plan is consumed before dispatch, scoped executor and reviewed steps reach the launch", async () => {
+		db.insert(approvedTicketContext)
+			.values({
+				id: crypto.randomUUID(),
+				projectId,
+				taskId,
+				content: "approved work",
+			})
+			.run();
+		const events: string[] = [];
+		let prompt = "";
+		const ctx = {
+			db,
+			isAuthenticated: true,
+			runtime: {
+				memoryRetrieve: new MemoryRetrieveService({ db }),
+				ticketPlans: {
+					consume: () => {
+						events.push("consume");
+						return "Reviewed implementation steps";
+					},
+				},
+			},
+		} as unknown as HostServiceContext;
+		const caller = createTicketRunRouter({
+			readSnapshot: async () => ({
+				hash: "snapshot",
+				context: "approved work",
+				cwd: "/fake",
+				repositories: [],
+			}),
+			createWorkspace: (_ctx, agent) => async (args) => {
+				events.push(agent);
+				prompt = args.prompt;
+				return { workspaceId: "ws", branch: "feat/reviewed" };
+			},
+		}).createCaller(ctx);
+		const result = await caller.start({
 			taskId,
 			ticketKey: "SUPER-1",
 			repos: [{ projectId }],
 			approvedContextProjectId: projectId,
+			planId: crypto.randomUUID(),
+			executorAgent: "codex",
 		});
+		expect(events).toEqual(["consume", "codex"]);
+		expect(result.runs[0]?.status).toBe("dispatched");
+		expect(prompt).toContain("Reviewed implementation steps");
+		expect(prompt).toContain("STOP once the PR is open");
+	});
 
-		expect(result.runs.length).toBe(1);
-		expect(db.select().from(ticketRuns).all().length).toBe(1);
+	it("unapproved or stale plan prevents all worktree/agent dispatch", async () => {
+		let launched = false;
+		const ctx = {
+			db,
+			isAuthenticated: true,
+			runtime: {
+				ticketPlans: {
+					consume: () => {
+						throw new Error("Approval is stale");
+					},
+				},
+			},
+		} as unknown as HostServiceContext;
+		const caller = createTicketRunRouter({
+			readSnapshot: async () => ({
+				hash: "snapshot",
+				context: "approved work",
+				cwd: "/fake",
+				repositories: [],
+			}),
+			createWorkspace: () => async () => {
+				launched = true;
+				return { workspaceId: "ws", branch: null };
+			},
+		}).createCaller(ctx);
+		await expect(
+			caller.start({
+				taskId,
+				ticketKey: "SUPER-1",
+				repos: [{ projectId }],
+				approvedContextProjectId: projectId,
+				planId: crypto.randomUUID(),
+			}),
+		).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
+		expect(launched).toBe(false);
+		expect(db.select().from(ticketRuns).all()).toHaveLength(0);
 	});
 });

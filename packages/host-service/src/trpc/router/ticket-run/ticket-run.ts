@@ -1,5 +1,7 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
+import { readTicketPlanSnapshot } from "../../../runtime/ticket-plans/snapshot";
+import { ticketPlanScopeSchema } from "../../../runtime/ticket-plans/types";
 import {
 	type CreatedWorkspace,
 	type CreateWorkspaceFn,
@@ -26,6 +28,8 @@ const startInputSchema = z.object({
 	 * The approved-context key. Cloud ticket → cloud `tasks.id` (Linear-synced);
 	 * local ticket → the source-tagged `unifiedId` it was keyed under.
 	 */
+	planId: z.string().uuid().optional(),
+	executorAgent: z.enum(["claude", "codex"]).default("claude"),
 	taskId: z.string().min(1),
 	/**
 	 * W7-M4: the source-tagged `unifiedId` (`${source}:${sourceId}`) from the
@@ -57,14 +61,17 @@ const startInputSchema = z.object({
  * local-sourced run (no cloud `tasks` row to link to); `ticketKey` lives in the
  * prompt only.
  */
-function makeCreateWorkspace(ctx: HostServiceContext): CreateWorkspaceFn {
+function makeCreateWorkspace(
+	ctx: HostServiceContext,
+	executorAgent: "claude" | "codex",
+): CreateWorkspaceFn {
 	const caller = workspacesRouter.createCaller(ctx);
 	return async (args): Promise<CreatedWorkspace> => {
 		const result = await caller.create({
 			projectId: args.projectId,
 			baseBranch: args.baseBranch,
 			taskId: args.taskId,
-			agents: [{ agent: "claude", prompt: args.prompt }],
+			agents: [{ agent: executorAgent, prompt: args.prompt }],
 		});
 		return {
 			workspaceId: result.workspace.id,
@@ -73,30 +80,68 @@ function makeCreateWorkspace(ctx: HostServiceContext): CreateWorkspaceFn {
 	};
 }
 
-export const ticketRunRouter = router({
-	/**
-	 * Start an autonomous ticket→PR run. Requires an approved context (B3); on
-	 * none, throws PRECONDITION_FAILED. Fans out one run row per repo; a per-repo
-	 * failure is recorded on its row, not thrown globally. Stops at PR creation.
-	 */
-	start: protectedProcedure
-		.input(startInputSchema)
-		.mutation(async ({ ctx, input }): Promise<DispatchTicketRunResult> => {
-			try {
-				return await dispatchTicketRun({
-					db: ctx.db,
-					retrieve: ctx.runtime.memoryRetrieve,
-					input,
-					createWorkspace: makeCreateWorkspace(ctx),
-				});
-			} catch (err) {
-				if (err instanceof TicketContextNotApprovedError) {
-					throw new TRPCError({
-						code: "PRECONDITION_FAILED",
-						message: err.message,
+export function createTicketRunRouter(
+	options: {
+		readSnapshot?: typeof readTicketPlanSnapshot;
+		createWorkspace?: typeof makeCreateWorkspace;
+	} = {},
+) {
+	return router({
+		/**
+		 * Start an autonomous ticket→PR run. Requires approved context and a one-use independently reviewed plan; on
+		 * none, throws PRECONDITION_FAILED. Fans out one run row per repo; a per-repo
+		 * failure is recorded on its row, not thrown globally. Stops at PR creation.
+		 */
+		start: protectedProcedure
+			.input(startInputSchema)
+			.mutation(async ({ ctx, input }): Promise<DispatchTicketRunResult> => {
+				try {
+					if (!input.planId)
+						throw new TRPCError({
+							code: "PRECONDITION_FAILED",
+							message:
+								"Prepare a plan and obtain independent agent approval before execution.",
+						});
+					const scope = ticketPlanScopeSchema.parse(input);
+					const snapshot = await (
+						options.readSnapshot ?? readTicketPlanSnapshot
+					)(ctx.db, scope);
+					let implementationPlan: string;
+					try {
+						implementationPlan = ctx.runtime.ticketPlans.consume(
+							input.planId,
+							scope,
+							snapshot,
+						);
+					} catch (error) {
+						throw new TRPCError({
+							code: "PRECONDITION_FAILED",
+							message:
+								error instanceof Error
+									? error.message
+									: "Plan approval could not be verified",
+						});
+					}
+					return await dispatchTicketRun({
+						db: ctx.db,
+						retrieve: ctx.runtime.memoryRetrieve,
+						input: { ...input, implementationPlan },
+						createWorkspace: (options.createWorkspace ?? makeCreateWorkspace)(
+							ctx,
+							input.executorAgent,
+						),
 					});
+				} catch (err) {
+					if (err instanceof TicketContextNotApprovedError) {
+						throw new TRPCError({
+							code: "PRECONDITION_FAILED",
+							message: err.message,
+						});
+					}
+					throw err;
 				}
-				throw err;
-			}
-		}),
-});
+			}),
+	});
+}
+
+export const ticketRunRouter = createTicketRunRouter();

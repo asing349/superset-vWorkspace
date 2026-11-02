@@ -4,6 +4,10 @@ import { asc, eq } from "drizzle-orm";
 import { z } from "zod";
 import type { HostDb } from "../../../db";
 import { hostAgentConfigs } from "../../../db/schema";
+import {
+	getCodexProcessEnv,
+	resolveCodexExecutable,
+} from "../../../runtime/codex/executable";
 import { createTerminalSessionInternal } from "../../../terminal/terminal";
 import type { HostServiceContext } from "../../../types";
 import { protectedProcedure, router } from "../../index";
@@ -248,7 +252,20 @@ async function runTerminalAgent(
 	}
 
 	const prompt = buildAttachmentBlock(input.prompt, resolvedAttachments);
-	const command = buildAgentCommandString(config, prompt);
+	// Use the same Codex installation/account as the connector even when the
+	// CLI only exists inside the desktop app bundle. Preserve explicit custom
+	// commands and existing Superset terminal wrappers when available.
+	const launchConfig =
+		config.presetId === "codex" && config.command === "codex"
+			? {
+					...config,
+					command: resolveCodexExecutable({
+						env: { ...getCodexProcessEnv(), ...config.env },
+						allowSupersetWrappers: true,
+					}),
+				}
+			: config;
+	const command = buildAgentCommandString(launchConfig, prompt);
 	const fullCommand = `${envOverlayPrefix(config.env)}${command}`;
 
 	const terminalId = crypto.randomUUID();

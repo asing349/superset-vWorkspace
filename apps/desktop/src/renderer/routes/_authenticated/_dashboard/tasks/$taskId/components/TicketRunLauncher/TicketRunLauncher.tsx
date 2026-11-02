@@ -25,12 +25,19 @@ import { useLocalHostService } from "renderer/routes/_authenticated/providers/Lo
 import { useV2WorkspaceCreateDefaultsStore } from "renderer/stores/v2-workspace-create-defaults";
 import { MOCK_ORG_ID } from "shared/constants";
 import type { UseTicketContextApprovalResult } from "../../hooks/useTicketContextApproval";
+import { useTicketPlan } from "../../hooks/useTicketPlan/useTicketPlan";
 import { useTicketRunStart } from "../../hooks/useTicketRunStart";
 import {
 	buildTicketRunRequest,
 	makeTicketRunUnifiedId,
 	multiRepoConfirmMessage,
 } from "../../utils/buildTicketRunRequest";
+import { TicketPlanPanel } from "./components/TicketPlanPanel/TicketPlanPanel";
+import { TicketRunFeedbackView } from "./components/TicketRunFeedbackView/TicketRunFeedbackView";
+import {
+	type TicketRunFeedback,
+	ticketRunFeedback,
+} from "./utils/ticketRunFeedback/ticketRunFeedback";
 
 interface TicketRunLauncherProps {
 	/** Cloud task id (Linear-synced `tasks.id`); also the approved-context key. */
@@ -149,6 +156,17 @@ export function TicketRunLauncher({
 		);
 	}, [primaryProjectId, recentProjects]);
 
+	const [executorAgent, setExecutorAgent] = useState<"claude" | "codex">(
+		"codex",
+	);
+	const [outcome, setOutcome] = useState<{
+		taskId: string;
+		feedback?: TicketRunFeedback;
+		error?: string;
+	} | null>(null);
+	const feedback = outcome?.taskId === taskId ? outcome.feedback : undefined;
+	const launchError = outcome?.taskId === taskId ? outcome.error : undefined;
+
 	const [primaryPickerOpen, setPrimaryPickerOpen] = useState(false);
 	const [additionalPickerOpen, setAdditionalPickerOpen] = useState(false);
 
@@ -217,35 +235,69 @@ export function TicketRunLauncher({
 		approval.isApprovalLoaded &&
 		approval.approvedContent === null;
 
-	const launch = () => {
-		if (!primaryProjectId) return;
-		const request = buildTicketRunRequest({
+	const planRequest = useMemo(
+		() =>
+			primaryProjectId
+				? {
+						...buildTicketRunRequest({
+							taskId,
+							unifiedId:
+								unifiedId ??
+								makeTicketRunUnifiedId({ source: "cloud", sourceId: taskId }),
+							ticketKey,
+							primaryProjectId,
+							additionalProjectIds,
+						}),
+						executorAgent,
+					}
+				: null,
+		[
 			taskId,
-			// Default to the cloud unified id on the cloud task page; a local entry
-			// passes its own `unifiedId` so writeback routes to the active source.
-			unifiedId:
-				unifiedId ??
-				makeTicketRunUnifiedId({ source: "cloud", sourceId: taskId }),
+			unifiedId,
 			ticketKey,
 			primaryProjectId,
 			additionalProjectIds,
-		});
-		const promise = start(request);
-		toast.promise(promise, {
-			loading: "Starting autonomous run…",
-			success: () => "Autonomous run started — opening a PR per repo",
-			error: (err) => (err instanceof Error ? err.message : String(err)),
-		});
+			executorAgent,
+		],
+	);
+	const reviewedPlan = useTicketPlan({
+		hostUrl: activeHostUrl,
+		request: planRequest,
+		approvedContent: approval.approvedContent,
+	});
+	const launchBlocker =
+		submitBlocker ??
+		(reviewedPlan.approvedPlanId
+			? null
+			: "Prepare a plan and obtain independent agent approval first");
+
+	const launch = async () => {
+		if (!planRequest || !reviewedPlan.approvedPlanId) return;
+		const request = { ...planRequest, planId: reviewedPlan.approvedPlanId };
+		setOutcome(null);
+		const toastId = toast.loading("Dispatching repository runs…");
+		try {
+			const result = await start(request);
+			reviewedPlan.invalidate();
+			const next = ticketRunFeedback({ result, projects: recentProjects });
+			setOutcome({ taskId, feedback: next });
+			toast[next.severity](next.message, { id: toastId });
+		} catch (error) {
+			reviewedPlan.invalidate();
+			const message = error instanceof Error ? error.message : String(error);
+			setOutcome({ taskId, error: message });
+			toast.error(message, { id: toastId });
+		}
 	};
 
 	const handleStart = () => {
-		if (submitBlocker) {
+		if (launchBlocker) {
 			if (!activeHostUrl) {
 				showHostServiceUnavailableToast(hostService, {
 					action: "start the autonomous run",
 				});
 			} else {
-				toast.error(submitBlocker);
+				toast.error(launchBlocker);
 			}
 			return;
 		}
@@ -259,13 +311,19 @@ export function TicketRunLauncher({
 				title: "Run across multiple repos?",
 				description: multiRepoConfirmMessage(names),
 				actions: [
-					{ label: "Proceed", variant: "default", onClick: launch },
+					{
+						label: "Proceed",
+						variant: "default",
+						onClick: () => {
+							void launch();
+						},
+					},
 					{ label: "Cancel", variant: "ghost" },
 				],
 			});
 			return;
 		}
-		launch();
+		void launch();
 	};
 
 	return (
@@ -388,15 +446,46 @@ export function TicketRunLauncher({
 				</Popover>
 			</div>
 
+			<label className="text-sm">
+				Coding agent
+				<select
+					aria-label="Coding agent"
+					value={executorAgent}
+					disabled={isStarting || reviewedPlan.pending}
+					onChange={(event) =>
+						setExecutorAgent(
+							event.target.value === "claude" ? "claude" : "codex",
+						)
+					}
+					className="ml-2 rounded border bg-background p-1"
+				>
+					<option value="codex">Codex · connected CLI account</option>
+					<option value="claude">Claude Code · existing CLI account</option>
+				</select>
+			</label>
+			<TicketPlanPanel
+				plan={reviewedPlan}
+				disabled={!!submitBlocker || isStarting || reviewedPlan.pending}
+			/>
+			{launchError !== undefined && (
+				<div role="alert" className="text-xs select-text cursor-text">
+					<p className="whitespace-pre-wrap text-destructive">{launchError}</p>
+					<p>
+						Dispatch could not be confirmed. Check workspaces before retrying;
+						some runs may have started.
+					</p>
+				</div>
+			)}
+			{feedback && <TicketRunFeedbackView feedback={feedback} />}
 			<div className="flex flex-col gap-1.5">
 				<Button
 					size="sm"
 					className="h-8 gap-1.5"
-					disabled={!!submitBlocker || isStarting}
+					disabled={!!launchBlocker || isStarting || reviewedPlan.pending}
 					onClick={handleStart}
 				>
 					<HiMiniPlay className="size-3.5" />
-					{isStarting ? "Starting…" : "Start autonomous run"}
+					{isStarting ? "Starting…" : "Start reviewed run"}
 				</Button>
 				{needsApproval && (
 					<span className="text-xs text-muted-foreground">

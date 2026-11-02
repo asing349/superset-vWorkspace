@@ -27,7 +27,12 @@ import type { ExecGh } from "./trpc/router/workspace-creation/utils/exec-gh";
 
 export type ApiClient = TRPCClient<AppRouter>;
 
+import type { CodexConnection } from "./runtime/codex/connection";
+import type { TicketPlanService } from "./runtime/ticket-plans/service";
+
 export interface HostServiceRuntime {
+	codex: CodexConnection;
+	ticketPlans: TicketPlanService;
 	auth: ChatService;
 	chat: ChatRuntimeManager;
 	filesystem: WorkspaceFilesystemManager;

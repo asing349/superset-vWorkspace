@@ -29,6 +29,8 @@ export function makeTicketRunUnifiedId({
 }
 
 export interface TicketRunRequest {
+	planId?: string;
+	executorAgent?: "claude" | "codex";
 	/**
 	 * The approved-context key. Cloud ticket → cloud `tasks.id`; local ticket →
 	 * the source-tagged `unifiedId` it is keyed under.

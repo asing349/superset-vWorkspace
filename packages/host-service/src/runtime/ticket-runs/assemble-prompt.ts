@@ -19,6 +19,7 @@ export const NEVER_MERGE_INSTRUCTION =
 	"Implement the change. Then commit, push, and run `/pr/create-pr` to open the pull request. STOP once the PR is open. Do NOT merge — never run `gh pr merge`, never enable auto-merge; the run ends at PR creation.";
 
 export interface AssembleTicketPromptInput {
+	implementationPlan?: string;
 	/** The ticket key (e.g. "SUPER-172"), carried into the branch/PR for B6. */
 	ticketKey: string;
 	/** Global Coding Practice doc content, when present (least powerful). */
@@ -80,6 +81,15 @@ export function assembleTicketPrompt(input: AssembleTicketPromptInput): string {
 			input.approvedContext.trim(),
 		].join("\n"),
 	);
+
+	if (input.implementationPlan)
+		sections.push(
+			[
+				"## Independently reviewed implementation plan",
+				input.implementationPlan,
+				"Follow this reviewed scope. If material requirements or repository scope change, stop and request a new plan review.",
+			].join("\n\n"),
+		);
 
 	// Closing stop instruction — autonomous to PR creation, NEVER merge.
 	sections.push(["## What to do", "", NEVER_MERGE_INSTRUCTION].join("\n"));

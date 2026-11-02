@@ -1,3 +1,4 @@
+import { dirname, join } from "node:path";
 import { createNodeWebSocket } from "@hono/node-ws";
 import { trpcServer } from "@hono/trpc-server";
 import { Octokit } from "@octokit/rest";
@@ -12,6 +13,7 @@ import type { ApiAuthProvider } from "./providers/auth";
 import type { HostAuthProvider } from "./providers/host-auth";
 import type { ModelProviderRuntimeResolver } from "./providers/model-providers";
 import { ChatRuntimeManager } from "./runtime/chat";
+import { CodexConnection } from "./runtime/codex/connection";
 import { WorkspaceFilesystemManager } from "./runtime/filesystem";
 import type { GitCredentialProvider } from "./runtime/git";
 import { createGitFactory } from "./runtime/git";
@@ -48,6 +50,8 @@ import { markGuideStaleOnHeadChange } from "./runtime/pr-review/guide-cache";
 // runtimes to the reviewer-config flag.
 import { markReviewerContextStale } from "./runtime/pr-review/reviewer-config-cache";
 import { PullRequestRuntimeManager } from "./runtime/pull-requests";
+import { TicketPlanService } from "./runtime/ticket-plans/service";
+import { TicketPlanStore } from "./runtime/ticket-plans/store";
 import {
 	createApiTaskWriteback,
 	createLinearLocalWriteback,
@@ -313,7 +317,12 @@ export function createApp(options: CreateAppOptions): CreateAppResult {
 			linearTickets.list(filter).map(mapLocalTicketToUnified),
 	});
 
+	const codex = new CodexConnection();
 	const runtime = {
+		codex,
+		ticketPlans: new TicketPlanService(
+			new TicketPlanStore(join(dirname(config.dbPath), "ticket-plans")),
+		),
 		auth: chatService,
 		chat: chatRuntime,
 		filesystem,
@@ -432,6 +441,7 @@ export function createApp(options: CreateAppOptions): CreateAppResult {
 
 	const ownsDb = options.db === undefined;
 	const dispose = async (): Promise<void> => {
+		codex.dispose();
 		// Each step is best-effort and isolated: a throw in one cleanup must
 		// not skip the others, otherwise a flaky `.stop()` could leak the
 		// open SQLite handle for the rest of the process lifetime.

@@ -15,6 +15,7 @@ import {
 	SETTING_ITEM_ID,
 	type SettingItemId,
 } from "../../../utils/settings-search";
+import { CodexConnection } from "./components/CodexConnection/CodexConnection";
 import { IntegrationTickets } from "./components/IntegrationTickets";
 import { LinearLocalConnection } from "./components/LinearLocalConnection";
 
@@ -109,6 +110,7 @@ export function IntegrationsSettings({
 						Connect external services to sync data.
 					</p>
 				</div>
+				<CodexConnection />
 				<p className="text-sm text-muted-foreground">
 					You need to be part of an organization to use integrations.
 				</p>
@@ -125,6 +127,7 @@ export function IntegrationsSettings({
 				</p>
 			</div>
 
+			<CodexConnection />
 			<div className="space-y-1">
 				{showLinear && (
 					<>

@@ -29,6 +29,8 @@ export interface TicketRunRepoInput {
 }
 
 export interface DispatchTicketRunInput {
+	/** Supplied by the server only after consuming independent plan approval. */
+	implementationPlan?: string;
 	/**
 	 * The approved-context key (B3 store key `(projectId, taskId)`). For a cloud
 	 * ticket this is the cloud `tasks.id` (Linear-synced); for a local ticket it is
@@ -183,6 +185,7 @@ export async function dispatchTicketRun(options: {
 			globalPractice,
 			projectPractice,
 			approvedContext,
+			implementationPlan: input.implementationPlan,
 		});
 
 		// (c) Insert the run row BEFORE dispatch so a crash leaves a recoverable
